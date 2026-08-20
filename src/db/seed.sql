@@ -1,0 +1,50 @@
+-- Seed categories and classifier keywords (local, free).
+
+INSERT INTO category (category_id, name, icon) VALUES
+  (1, 'phone', '📱'),
+  (2, 'earbuds', '🎧'),
+  (3, 'headphones', '🎧'),
+  (4, 'charger', '🔌'),
+  (5, 'camera', '📷'),
+  (6, 'tablet', '📱'),
+  (7, 'laptop', '💻'),
+  (8, 'watch', '⌚'),
+  (9, 'tv', '📺'),
+  (10, 'speaker', '🔊');
+
+SELECT setval(pg_get_serial_sequence('category', 'category_id'), 10);
+
+INSERT INTO keyword (category_id, word, source) VALUES
+  (1, 'phone', 'seed'),
+  (1, 'iphone', 'seed'),
+  (1, 'pixel', 'seed'),
+  (1, 'galaxy', 'seed'),
+  (1, 'android', 'seed'),
+  (2, 'earbud', 'seed'),
+  (2, 'airpod', 'seed'),
+  (2, 'buds', 'seed'),
+  (3, 'headphone', 'seed'),
+  (3, 'over-ear', 'seed'),
+  (3, 'wh-1000', 'seed'),
+  (3, 'xm5', 'seed'),
+  (3, 'xm4', 'seed'),
+  (4, 'charger', 'seed'),
+  (4, 'adapter', 'seed'),
+  (4, 'gan', 'seed'),
+  (4, 'watt', 'seed'),
+  (5, 'camera', 'seed'),
+  (5, 'dslr', 'seed'),
+  (5, 'mirrorless', 'seed'),
+  (5, 'a6400', 'seed'),
+  (5, 'a7', 'seed'),
+  (5, 'α', 'seed'),
+  (6, 'tablet', 'seed'),
+  (6, 'ipad', 'seed'),
+  (7, 'laptop', 'seed'),
+  (7, 'macbook', 'seed'),
+  (7, 'notebook', 'seed'),
+  (8, 'watch', 'seed'),
+  (9, 'tv', 'seed'),
+  (9, 'television', 'seed'),
+  (10, 'speaker', 'seed'),
+  (10, 'soundbar', 'seed');
