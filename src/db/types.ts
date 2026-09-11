@@ -18,7 +18,7 @@ export type KeywordSource = 'seed' | 'user' | 'ai';
 
 export type AliasSource = 'seed' | 'user' | 'ai';
 
-/** Frozen verdict shown on the Verdict screen — stored in decision.payload */
+/** Frozen verdict shown on the Verdict screen, stored in decision.payload */
 export interface DecisionPayload {
   kind: VerdictKind;
   tag: string;

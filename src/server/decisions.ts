@@ -1,8 +1,9 @@
-import type { ClassifyResult, Verdict } from '../core/types.js';
+import type { Category, ClassifyResult, Verdict } from '../core/types.js';
+import { findCatalogItem, withOwnershipWeights } from '../data/seed.js';
 import { CATEGORY_IDS, categoryNameById, verdictToNewDecision } from '../db/map.js';
 import type { DecisionPayload, NewDecisionRow } from '../db/types.js';
 import type { AppDatabase } from './db.js';
-import { addInventoryItem, findOwnedInCategory, retireItem } from './inventory.js';
+import { addInventoryItem, findOwnedInCategory, removeConsideringByName, retireItem } from './inventory.js';
 
 function parsePayload(raw: string): DecisionPayload {
   return JSON.parse(raw) as DecisionPayload;
@@ -104,7 +105,7 @@ export function completeDecision(
   userId: number,
   outcome: 'skip' | 'buy',
   boughtAgainstAdvice: boolean,
-): { retiredName: string | null; addedName: string | null } {
+): { retiredName: string | null; addedName: string | null; suggestSell: boolean } {
   const dec = getDecision(db, decisionId, userId);
   if (!dec) throw new Error('Decision not found');
 
@@ -112,21 +113,23 @@ export function completeDecision(
   let retiredItemId: number | null = null;
   let retiredName: string | null = null;
   let addedName: string | null = null;
+  let suggestSell = false;
 
   if (outcome === 'buy' && dec.category_id) {
     const owned = findOwnedInCategory(db, userId, dec.category_id);
     if (owned) {
       const ownedName = owned.brand ? `${owned.brand} ${owned.model}` : owned.model;
       if (ownedName === dec.payload.candidate.name) {
-        // duplicate — log purchase but don't add second copy
         db.prepare(`
           UPDATE decision SET purchased = ?, bought_against_advice = ? WHERE decision_id = ?
         `).run(purchased, boughtAgainstAdvice ? 1 : 0, decisionId);
-        return { retiredName: null, addedName: null };
+        removeConsideringByName(db, userId, dec.payload.candidate.name);
+        return { retiredName: null, addedName: null, suggestSell: false };
       }
       retireItem(db, owned.item_id);
       retiredItemId = owned.item_id;
       retiredName = ownedName;
+      suggestSell = boughtAgainstAdvice;
     }
 
     const cat = categoryNameById(dec.category_id);
@@ -135,6 +138,10 @@ export function completeDecision(
       const brand = parts.length >= 2 ? parts[0] : null;
       const model =
         parts.length >= 2 ? parts.slice(1).join(' ') : dec.payload.candidate.name;
+      const hit = findCatalogItem(dec.payload.candidate.name);
+      const specs = hit
+        ? withOwnershipWeights(hit.specs, cat as Category)
+        : [];
 
       addInventoryItem(db, {
         user_id: userId,
@@ -145,14 +152,16 @@ export function completeDecision(
         icon: dec.payload.candidate.icon,
         price: dec.payload.candidate.price,
         release_year: null,
-        specs: [],
+        specs,
         provenance: 'receipt',
-        confidence: null,
+        confidence: hit ? 'high' : null,
         status: 'owned',
         acquired_at: new Date().toISOString().slice(0, 10),
       });
       addedName = dec.payload.candidate.name;
     }
+
+    removeConsideringByName(db, userId, dec.payload.candidate.name);
   }
 
   db.prepare(`
@@ -163,5 +172,5 @@ export function completeDecision(
     WHERE decision_id = ?
   `).run(purchased, boughtAgainstAdvice ? 1 : 0, retiredItemId, decisionId);
 
-  return { retiredName, addedName };
+  return { retiredName, addedName, suggestSell };
 }

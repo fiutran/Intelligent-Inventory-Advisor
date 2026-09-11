@@ -31,6 +31,12 @@ export interface OwnedItem {
   specs: Spec[];
 }
 
+/** Inventory row as shown in the UI (includes DB id + status) */
+export interface InventoryListItem extends OwnedItem {
+  item_id: number;
+  status: 'owned' | 'considering' | 'retired';
+}
+
 export interface CatalogItem {
   aliases: string[];
   cat: Category;

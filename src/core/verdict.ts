@@ -3,7 +3,7 @@ import { compareSpecs, costPerGain, summarizeDelta } from './delta.js';
 import type { Candidate, DeltaRow, OwnedItem, Verdict, VerdictKind } from './types.js';
 
 function formatPrice(price: number | null): string {
-  return price ? `€${price}` : '—';
+  return price ? `€${price}` : '-';
 }
 
 function buildVerdict(
@@ -30,7 +30,7 @@ function buildVerdict(
   };
 }
 
-/** Same model already owned — pure duplication */
+/** Same model already owned: pure duplication */
 function verdictDuplicate(
   candidate: Candidate,
   ownedItem: OwnedItem,
@@ -52,7 +52,7 @@ function verdictDuplicate(
   );
 }
 
-/** Known model + owned in category — full spec delta */
+/** Known model + owned in category: full spec delta */
 function verdictUpgrade(
   candidate: Candidate,
   ownedItem: OwnedItem,
@@ -73,7 +73,7 @@ function verdictUpgrade(
   } else if (realGains <= 3) {
     kind = 'wait';
     tag = 'Verdict · borderline';
-    head = `${realGains} real upgrades — worth it only if you value them.`;
+    head = `${realGains} real upgrades, worth it only if you value them.`;
   } else {
     kind = 'buy';
     tag = 'Verdict · worth it';
@@ -83,7 +83,7 @@ function verdictUpgrade(
   const newPart = newCount ? ` and ${newCount} are new` : '';
   const rationale =
     `You already own an ${ownedItem.name} (since ${ownedItem.since}). ` +
-    `Of ${comparison.length} comparable specs, ${meaningful} improve meaningfully${newPart} — ` +
+    `Of ${comparison.length} comparable specs, ${meaningful} improve meaningfully${newPart}. ` +
     'the rest are marginal or identical.';
 
   return buildVerdict(
@@ -94,7 +94,7 @@ function verdictUpgrade(
     [
       ['Real gains', String(realGains)],
       ['Price', formatPrice(candidate.price)],
-      ['Cost / gain', perGain != null ? `€${perGain}` : '—'],
+      ['Cost / gain', perGain != null ? `€${perGain}` : '-'],
     ],
     candidate,
     ownedItem,
@@ -102,7 +102,7 @@ function verdictUpgrade(
   );
 }
 
-/** Category overlap but model unknown — redundancy flag only */
+/** Category overlap but model unknown: redundancy flag only */
 function verdictOverlapUnknownModel(
   candidate: Candidate,
   ownedItem: OwnedItem,
@@ -125,14 +125,14 @@ function verdictOverlapUnknownModel(
   );
 }
 
-/** No category overlap — genuine gap */
+/** No category overlap: genuine gap */
 function verdictNoOverlap(candidate: Candidate, cat: Candidate['cat']): Verdict {
   const label = cat ? CATEGORY_LABEL[cat] : 'match';
   return buildVerdict(
     'clear',
     'Verdict · no overlap',
     'Nothing like it in your inventory.',
-    `You do not own a ${label} for this. No redundancy risk — this is a genuine gap, ` +
+    `You do not own a ${label} for this. No redundancy risk: this is a genuine gap, ` +
       'so it is a straight need-vs-want call, not a duplication one.',
     [
       ['Overlap', 'None'],
@@ -171,7 +171,7 @@ export function buildVerdictFromContext(input: BuildVerdictInput): Verdict {
   return verdictNoOverlap(candidate, candidate.cat);
 }
 
-/** When user buys against a skip/wait verdict — suggest selling the existing item */
+/** When user buys against a skip/wait verdict, suggest selling the existing item */
 export function shouldSuggestSell(verdict: Verdict, boughtAnyway: boolean): boolean {
   if (!boughtAnyway) return false;
   if (!verdict.ownedItem) return false;

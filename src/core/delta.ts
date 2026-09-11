@@ -14,7 +14,7 @@ export function compareSpecs(ownedItem: OwnedItem, candidateSpecs: Spec[]): Delt
     const { kind, label } = classifySpec(os, cs);
     return {
       k: cs.k,
-      own: os?.v ?? '—',
+      own: os?.v ?? '-',
       cand: cs.v,
       kind,
       label,

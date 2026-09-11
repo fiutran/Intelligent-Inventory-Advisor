@@ -99,15 +99,25 @@ export function VerdictScreen({ verdict, onSkip, onBuy, onBack }: VerdictScreenP
 
       {isDuplicate(verdict) && (
         <div className="note">
-          Nothing to compare — it&apos;s the same model. If this is a <b>replacement</b>,
+          Nothing to compare: it&apos;s the same model. If this is a <b>replacement</b>,
           mark the old one retired instead of adding a duplicate.
         </div>
       )}
 
+      {!isDuplicate(verdict) &&
+        verdict.comparison &&
+        verdict.ownedItem &&
+        (verdict.kind === 'skip' || verdict.kind === 'wait') && (
+          <div className="note">
+            If you buy anyway, I&apos;ll replace <b>{verdict.ownedItem.name}</b> in your list.
+            Consider selling the old one so you&apos;re not paying for two.
+          </div>
+        )}
+
       {!isDuplicate(verdict) && verdict.comparison === null && verdict.ownedItem && (
         <div className="note">
           Add the model to your inventory or pick a known one, and I&apos;ll compare
-          spec-by-spec. <b>Value-at-N=1:</b> even one owned item is enough to warn you.
+          spec-by-spec. Even one owned item in this category is enough to warn you.
         </div>
       )}
 

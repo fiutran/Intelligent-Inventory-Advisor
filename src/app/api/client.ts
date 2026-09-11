@@ -1,4 +1,4 @@
-import type { ClassifyResult, OwnedItem, Verdict } from '../../core/types.js';
+import type { ClassifyResult, InventoryListItem, OwnedItem, Verdict } from '../../core/types.js';
 
 const BASE = '/api';
 
@@ -20,10 +20,30 @@ export interface DecideResponse {
   classify: ClassifyResult;
 }
 
+export interface InventoryResponse {
+  items: InventoryListItem[];
+  owned: InventoryListItem[];
+  considering: InventoryListItem[];
+  retired: InventoryListItem[];
+}
+
+export interface CatalogItemSummary {
+  name: string;
+  cat: string;
+  icon: string;
+  price: number | null;
+  meta: string;
+}
+
 export const api = {
   health: () => request<{ ok: boolean }>('/health'),
 
-  getInventory: () => request<{ items: OwnedItem[] }>('/inventory'),
+  getCatalog: (q?: string) =>
+    request<{ items: CatalogItemSummary[] }>(
+      q ? `/catalog?q=${encodeURIComponent(q)}` : '/catalog',
+    ),
+
+  getInventory: () => request<InventoryResponse>('/inventory'),
 
   decide: (query: string, price: number | null) =>
     request<DecideResponse>('/decide', {
@@ -36,23 +56,47 @@ export const api = {
     outcome: 'skip' | 'buy',
     boughtAgainstAdvice: boolean,
   ) =>
-    request<{ ok: boolean; retiredName: string | null; addedName: string | null }>(
-      `/decisions/${decisionId}/complete`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ outcome, bought_against_advice: boughtAgainstAdvice }),
-      },
-    ),
+    request<{
+      ok: boolean;
+      retiredName: string | null;
+      addedName: string | null;
+      suggestSell: boolean;
+    }>(`/decisions/${decisionId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ outcome, bought_against_advice: boughtAgainstAdvice }),
+    }),
 
   logConsidering: (query: string) =>
-    request<{ ok: boolean }>('/inventory/considering', {
+    request<InventoryResponse>('/inventory/considering', {
       method: 'POST',
       body: JSON.stringify({ query }),
     }),
 
+  addItem: (input: {
+    name: string;
+    category?: string;
+    price?: number | null;
+    summary?: string | null;
+  }) =>
+    request<InventoryResponse>('/inventory', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  removeItem: (itemId: number) =>
+    request<InventoryResponse>(`/inventory/${itemId}`, { method: 'DELETE' }),
+
   addDemoCharger: () =>
-    request<{ ok: boolean; items: OwnedItem[] }>('/inventory/demo-charger', {
+    request<InventoryResponse>('/inventory/demo-charger', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  resetData: () =>
+    request<InventoryResponse>('/inventory/reset', {
       method: 'POST',
       body: JSON.stringify({}),
     }),
 };
+
+export type { OwnedItem, InventoryListItem };

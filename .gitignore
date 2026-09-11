@@ -1,5 +1,8 @@
 node_modules/
 dist/
 data/
+.env
 *.local
 *.tsbuildinfo
+.pack-staging/
+UpgradeSkip-portable.zip

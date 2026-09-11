@@ -91,7 +91,7 @@ export function recordDecision(state: AppState, input: RecordDecisionInput): App
   next.inventory.unshift(newItem);
 
   if (boughtAgainstAdvice && verdict.ownedItem && (verdict.kind === 'skip' || verdict.kind === 'wait')) {
-    // Flag retained on verdict for UI — state tracks that we should nudge sell
+    // Flag retained on verdict for UI: state tracks that we should nudge sell
     next.preferences.upgradeAppetite[newItem.cat] = 'eager';
   }
 

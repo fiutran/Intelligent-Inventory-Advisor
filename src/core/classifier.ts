@@ -1,6 +1,5 @@
-import { CATEGORY_LABEL, CATEGORY_WORDS, SEED_CATALOG } from '../data/seed.js';
+import { CATEGORY_LABEL, CATEGORY_WORDS, findCatalogItem, SEED_CATALOG } from '../data/seed.js';
 import type {
-  AIAdapter,
   Candidate,
   CatalogItem,
   Category,
@@ -12,7 +11,8 @@ import type {
 export interface ClassifierDeps {
   catalog?: CatalogItem[];
   owned?: OwnedItem[];
-  ai?: AIAdapter;
+  /** Async lookup for unknown products (LLM / remote cache). */
+  researchProduct?: (query: string) => Promise<CatalogItem | null>;
 }
 
 function guessCategory(query: string): Category | null {
@@ -23,18 +23,26 @@ function guessCategory(query: string): Category | null {
   return null;
 }
 
-function findCatalogHit(query: string, catalog: CatalogItem[]): CatalogItem | undefined {
-  const q = query.toLowerCase();
-  return catalog.find((c) => c.aliases.some((a) => q.includes(a) || a.includes(q)));
-}
+export { guessCategory };
 
 function iconForCategory(cat: Category | null, owned: OwnedItem[]): string {
   if (!cat) return '🛍️';
   return owned.find((o) => o.cat === cat)?.icon ?? '🛍️';
 }
 
+function fromCatalog(hit: CatalogItem, price: number | null): Candidate {
+  return {
+    name: hit.name,
+    icon: hit.icon,
+    cat: hit.cat,
+    price: price ?? hit.price,
+    meta: hit.meta,
+    specs: hit.specs,
+  };
+}
+
 /**
- * Local-first classifier. Falls back to AI adapter only on a full miss.
+ * Local catalog first, then optional research (LLM), then weak category guess.
  */
 export async function classify(
   query: string,
@@ -43,55 +51,55 @@ export async function classify(
 ): Promise<ClassifyResult> {
   const catalog = deps.catalog ?? SEED_CATALOG;
   const owned = deps.owned ?? [];
-  const hit = findCatalogHit(query, catalog);
+  const hit = findCatalogItem(query, catalog);
 
   if (hit) {
-    const candidate: Candidate = {
-      name: hit.name,
-      icon: hit.icon,
-      cat: hit.cat,
-      price: price ?? hit.price,
-      meta: hit.meta,
-      specs: hit.specs,
-    };
-    return { candidate, matched: true, cacheHit: true };
+    return { candidate: fromCatalog(hit, price), matched: true, cacheHit: true };
+  }
+
+  if (deps.researchProduct) {
+    try {
+      const researched = await deps.researchProduct(query);
+      if (researched) {
+        return {
+          candidate: fromCatalog(researched, price),
+          matched: true,
+          cacheHit: false,
+        };
+      }
+    } catch (err) {
+      console.warn('[classify] research failed:', err instanceof Error ? err.message : err);
+    }
   }
 
   const cat = guessCategory(query);
   if (cat) {
-    const candidate: Candidate = {
+    return {
+      candidate: {
+        name: query,
+        icon: iconForCategory(cat, owned),
+        cat,
+        price,
+        meta: CATEGORY_LABEL[cat],
+        specs: null,
+      },
+      matched: false,
+      cacheHit: false,
+    };
+  }
+
+  return {
+    candidate: {
       name: query,
-      icon: iconForCategory(cat, owned),
-      cat,
+      icon: '🛍️',
+      cat: null,
       price,
-      meta: CATEGORY_LABEL[cat],
+      meta: 'unrecognised',
       specs: null,
-    };
-    return { candidate, matched: false, cacheHit: false };
-  }
-
-  if (deps.ai) {
-    const aiResult = await deps.ai.classify(query);
-    const candidate: Candidate = {
-      name: aiResult.name || query,
-      icon: iconForCategory(aiResult.cat, owned),
-      cat: aiResult.cat,
-      price,
-      meta: aiResult.cat ? CATEGORY_LABEL[aiResult.cat] : 'unrecognised',
-      specs: null,
-    };
-    return { candidate, matched: false, cacheHit: false };
-  }
-
-  const candidate: Candidate = {
-    name: query,
-    icon: '🛍️',
-    cat: null,
-    price,
-    meta: 'unrecognised',
-    specs: null,
+    },
+    matched: false,
+    cacheHit: false,
   };
-  return { candidate, matched: false, cacheHit: false };
 }
 
 export function resolveSpecs(

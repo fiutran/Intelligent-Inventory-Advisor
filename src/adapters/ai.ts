@@ -1,25 +1,44 @@
 import type { AIAdapter } from '../core/types.js';
+import { isLlmConfigured, researchProduct, refineVerdict } from './llm.js';
 
 /**
- * Stub — called only when local classifier misses.
- * Wire to your AI model API in production.
+ * Legacy adapter surface: prefer researchProduct / refineVerdict from ./llm.js.
+ * classify() here maps onto LLM research when configured.
  */
 export const aiAdapter: AIAdapter = {
   async classify(query) {
-    throw new Error(
-      `[aiAdapter.classify] Not implemented — cache miss for "${query}". ` +
-        'Provide an AI adapter or expand the local catalog.',
-    );
+    if (!isLlmConfigured()) {
+      throw new Error(
+        `LLM not configured for "${query}". Set LLM_API_KEY in .env (see .env.example).`,
+      );
+    }
+    const product = await researchProduct(query);
+    if (!product) return { cat: null, name: query };
+    return { cat: product.cat, name: product.name };
   },
 
-  async judge(_context) {
-    throw new Error(
-      '[aiAdapter.judge] Not implemented — use local delta/verdict for known models.',
-    );
+  async judge(context) {
+    if (!isLlmConfigured()) {
+      throw new Error('LLM not configured');
+    }
+    const polished = await refineVerdict({
+      candidate: context.candidate,
+      ownedItem: context.ownedItem,
+      comparison: context.comparison,
+      draft: {
+        kind: 'wait',
+        tag: 'Verdict · borderline',
+        head: 'Needs a closer look.',
+        rationale: 'Rule-based draft unavailable.',
+      },
+    });
+    if (!polished) {
+      throw new Error('LLM judge returned nothing');
+    }
+    return polished;
   },
 
   async recommendNext(_context) {
-    // No recommendation loop in v0 scaffold
     return null;
   },
 };

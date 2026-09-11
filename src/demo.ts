@@ -7,7 +7,7 @@ const scenarios = [
   { query: 'some random gadget', label: 'Unrecognised item' },
 ];
 
-console.log('Inventory Delta Advisor — core demo\n');
+console.log('Inventory Delta Advisor: core demo\n');
 
 for (const { query, label } of scenarios) {
   const { verdict, classify: cls } = await decide({ query });

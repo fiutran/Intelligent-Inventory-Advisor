@@ -1,28 +1,28 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  seedInventoryRows,
   seedKeywordRows,
   seedProductAliasRows,
   seedProductCacheRows,
   SEED_CATEGORY_ROWS,
 } from '../db/map.js';
-import type { InventoryItemRow } from '../db/types.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PATH = join(process.cwd(), 'data', 'app.db');
 
-export type AppDatabase = Database.Database;
+/** Built-in Node SQLite: no native addon / rebuild needed */
+export type AppDatabase = DatabaseSync;
 
 export function openDatabase(path = DEFAULT_PATH): AppDatabase {
   mkdirSync(dirname(path), { recursive: true });
-  const db = new Database(path);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  const db = new DatabaseSync(path);
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
   migrate(db);
   seedIfEmpty(db);
+  syncCatalog(db);
   return db;
 }
 
@@ -32,10 +32,12 @@ function migrate(db: AppDatabase): void {
 }
 
 function seedIfEmpty(db: AppDatabase): void {
-  const userCount = db.prepare('SELECT COUNT(*) AS n FROM user').get() as { n: number };
-  if (userCount.n > 0) return;
+  const userCount = db.prepare('SELECT COUNT(*) AS n FROM user').get() as
+    | { n: number }
+    | undefined;
+  if (userCount && userCount.n > 0) return;
 
-  db.prepare('INSERT INTO user (user_id, name) VALUES (1, ?)').run('Demo user');
+  db.prepare('INSERT INTO user (user_id, name) VALUES (1, ?)').run('You');
 
   const insCat = db.prepare(
     'INSERT INTO category (category_id, name, icon) VALUES (?, ?, ?)',
@@ -51,9 +53,23 @@ function seedIfEmpty(db: AppDatabase): void {
     insKw.run(k.keyword_id, k.category_id, k.word, k.source);
   }
 
+  // Catalog products/aliases filled by syncCatalog
+}
+
+/** Upsert seed catalog so existing DBs pick up new models without reset. */
+function syncCatalog(db: AppDatabase): void {
   const insProd = db.prepare(`
     INSERT INTO product_cache (product_key, category_id, brand, model, summary, icon, price, specs, source, researched_at, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(product_key) DO UPDATE SET
+      category_id = excluded.category_id,
+      brand = excluded.brand,
+      model = excluded.model,
+      summary = excluded.summary,
+      icon = excluded.icon,
+      price = excluded.price,
+      specs = excluded.specs,
+      researched_at = excluded.researched_at
   `);
   for (const p of seedProductCacheRows()) {
     insProd.run(
@@ -71,42 +87,24 @@ function seedIfEmpty(db: AppDatabase): void {
     );
   }
 
+  const existingAliases = new Set(
+    (
+      db.prepare('SELECT lower(alias) AS a FROM product_alias').all() as { a: string }[]
+    ).map((r) => r.a),
+  );
+  const maxAlias = db.prepare('SELECT COALESCE(MAX(alias_id), 0) AS n FROM product_alias').get() as {
+    n: number;
+  };
+  let nextId = maxAlias.n + 1;
   const insAlias = db.prepare(
     'INSERT INTO product_alias (alias_id, product_key, alias, source) VALUES (?, ?, ?, ?)',
   );
   for (const a of seedProductAliasRows()) {
-    insAlias.run(a.alias_id, a.product_key, a.alias, a.source);
+    const key = a.alias.toLowerCase();
+    if (existingAliases.has(key)) continue;
+    insAlias.run(nextId++, a.product_key, a.alias, a.source);
+    existingAliases.add(key);
   }
-
-  const insInv = db.prepare(`
-    INSERT INTO inventory_item (item_id, user_id, category_id, brand, model, summary, icon, price, release_year, specs, provenance, confidence, status, acquired_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const row of seedInventoryRows(1)) {
-    insertInventoryRow(insInv, row);
-  }
-}
-
-function insertInventoryRow(
-  stmt: Database.Statement,
-  row: InventoryItemRow,
-): void {
-  stmt.run(
-    row.item_id,
-    row.user_id,
-    row.category_id,
-    row.brand,
-    row.model,
-    row.summary,
-    row.icon,
-    row.price,
-    row.release_year,
-    JSON.stringify(row.specs),
-    row.provenance,
-    row.confidence,
-    row.status,
-    row.acquired_at,
-  );
 }
 
 export { DEFAULT_PATH };

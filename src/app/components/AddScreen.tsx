@@ -1,48 +1,121 @@
+import { useState } from 'react';
+
+const CATEGORIES = [
+  { id: 'phone', label: 'Phone' },
+  { id: 'earbuds', label: 'Earbuds' },
+  { id: 'headphones', label: 'Headphones' },
+  { id: 'charger', label: 'Charger' },
+  { id: 'camera', label: 'Camera' },
+  { id: 'tablet', label: 'Tablet' },
+  { id: 'laptop', label: 'Laptop' },
+  { id: 'watch', label: 'Watch' },
+  { id: 'tv', label: 'TV' },
+  { id: 'speaker', label: 'Speaker' },
+] as const;
+
 interface AddScreenProps {
-  onConfirm: () => void;
+  onSave: (input: {
+    name: string;
+    category: string;
+    price: number | null;
+    summary: string;
+  }) => void;
 }
 
-export function AddScreen({ onConfirm }: AddScreenProps) {
+export function AddScreen({ onSave }: AddScreenProps) {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('phone');
+  const [price, setPrice] = useState('');
+  const [summary, setSummary] = useState('');
+
+  const save = () => {
+    const n = name.trim();
+    if (!n) return;
+    const p = parseInt(price.replace(/[^\d]/g, ''), 10);
+    onSave({
+      name: n,
+      category,
+      price: Number.isNaN(p) ? null : p,
+      summary: summary.trim(),
+    });
+    setName('');
+    setPrice('');
+    setSummary('');
+  };
+
   return (
     <section className="screen fade">
       <div className="eyebrow">Add to inventory</div>
-      <div className="shot">
-        <div className="cam">📷</div>
-        <div className="h">Point at the item or its box</div>
-        <div className="s">
-          I&apos;ll read the model and pull the specs. You confirm the thin parts.
+      <p className="lead">What do you already own?</p>
+      <div>
+        <label className="fl" htmlFor="add-name">
+          Item
+        </label>
+        <input
+          className="input"
+          id="add-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
+          placeholder="e.g. iPhone 14 Pro"
+        />
+      </div>
+      <div className="prow">
+        <div>
+          <label className="fl" htmlFor="add-cat">
+            Category
+          </label>
+          <select
+            className="input"
+            id="add-cat"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            {CATEGORIES.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="fl" htmlFor="add-price">
+            Price paid
+          </label>
+          <input
+            className="input"
+            id="add-price"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            inputMode="numeric"
+            placeholder="optional"
+          />
         </div>
       </div>
-      <div style={{ marginTop: 6 }}>
-        <div className="field">
-          <label>Identity</label>
-          <div className="fv">
-            <span>Anker 65W USB-C charger</span>
-            <span className="conf hi">High</span>
-          </div>
-        </div>
-        <div className="field">
-          <label>Specs</label>
-          <div className="fv">
-            <span>65 W · GaN · 3 ports</span>
-            <span className="conf md">Medium</span>
-          </div>
-        </div>
-        <div className="field">
-          <label>Owned since</label>
-          <div className="fv">
-            <span>~ Mar 2024</span>
-            <span className="conf lo">Guess</span>
-          </div>
-        </div>
-        <div className="guessnote">
-          A photo can&apos;t know when you got it. I guessed from the photo date — tap to
-          correct, or forward the receipt and I&apos;ll set it exactly.
-        </div>
-        <button type="button" className="btn primary" style={{ marginTop: 14 }} onClick={onConfirm}>
-          <span>Confirm and save</span>
-        </button>
+      <div style={{ marginTop: 13 }}>
+        <label className="fl" htmlFor="add-meta">
+          Notes
+        </label>
+        <input
+          className="input"
+          id="add-meta"
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          placeholder="e.g. 256 GB · black"
+        />
       </div>
+      <button
+        type="button"
+        className="btn primary"
+        style={{ marginTop: 16 }}
+        onClick={save}
+        disabled={!name.trim()}
+      >
+        <span>Save to inventory</span>
+      </button>
+      <p className="caption" style={{ textAlign: 'left', margin: '14px 2px 0' }}>
+        Type what you own so Decide can compare upgrades against it later.
+      </p>
     </section>
   );
 }
