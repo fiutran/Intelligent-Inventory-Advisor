@@ -81,13 +81,14 @@ async function pickPort(start) {
 function openBrowser(url) {
   const os = platform();
   try {
-    if (os === 'win32') {
-      spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' });
-    } else if (os === 'darwin') {
-      spawn('open', [url], { detached: true, stdio: 'ignore' });
-    } else {
-      spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
-    }
+    const [cmd, args] =
+      os === 'win32' ? ['cmd', ['/c', 'start', '', url]]
+      : os === 'darwin' ? ['open', [url]]
+      : ['xdg-open', [url]];
+    const p = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    // Never let a missing browser opener crash the app
+    p.on('error', () => say(`Open this in your browser: ${url}`));
+    p.unref();
   } catch {
     // Browser open is optional
   }
