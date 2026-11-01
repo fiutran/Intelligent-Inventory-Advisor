@@ -1,8 +1,10 @@
 node_modules/
 dist/
-data/
+/data/
 .env
 *.local
 *.tsbuildinfo
 .pack-staging/
 UpgradeSkip-portable.zip
+
+.vercel
