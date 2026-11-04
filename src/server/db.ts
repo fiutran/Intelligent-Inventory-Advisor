@@ -99,6 +99,21 @@ function syncCatalog(db: AppDatabase): void {
   const insAlias = db.prepare(
     'INSERT INTO product_alias (alias_id, product_key, alias, source) VALUES (?, ?, ?, ?)',
   );
+  // Drop seed aliases that are no longer in the catalog (e.g. old over-generic ones
+  // like "ipad" or "airpods" that made the matcher substitute the wrong product).
+  const currentSeed = new Set(seedProductAliasRows().map((a) => a.alias.toLowerCase()));
+  const stale = (
+    db.prepare(`SELECT alias_id, lower(alias) AS a FROM product_alias WHERE source = 'seed'`).all() as {
+      alias_id: number;
+      a: string;
+    }[]
+  ).filter((r) => !currentSeed.has(r.a));
+  const del = db.prepare('DELETE FROM product_alias WHERE alias_id = ?');
+  for (const r of stale) {
+    del.run(r.alias_id);
+    existingAliases.delete(r.a);
+  }
+
   for (const a of seedProductAliasRows()) {
     const key = a.alias.toLowerCase();
     if (existingAliases.has(key)) continue;

@@ -56,14 +56,32 @@ export interface Candidate {
   specs: Spec[] | null;
 }
 
-export type DeltaKind = 'same' | 'mean' | 'marg' | 'new';
+/**
+ * better / worse: a noticeable change in a direction that matters
+ * similar:        changed, but below the threshold a person would notice
+ * same:           identical
+ * different:      changed with no better/worse (screen size, chips from different families)
+ * unknown:        one side has no data, never counted
+ */
+export type DeltaKind = 'better' | 'worse' | 'similar' | 'same' | 'different' | 'unknown';
+
+export type Significance = 'major' | 'minor';
 
 export interface DeltaRow {
   k: string;
   own: string;
   cand: string;
   kind: DeltaKind;
+  /** Pill text for the UI ("Much better", "No data", ...). */
   label: string;
+  significance?: Significance;
+  importance: 'core' | 'minor';
+  /** Noun used in verdict copy ("zoom", "battery life"). */
+  noun: string;
+  /** Adjective used instead of the noun ("lighter" / "heavier"), if the spec has one. */
+  adj?: string;
+  /** Signed contribution to the verdict score. */
+  points: number;
 }
 
 export type VerdictKind = 'skip' | 'wait' | 'buy' | 'clear';
@@ -87,8 +105,11 @@ export interface Verdict {
 
 export interface ClassifyResult {
   candidate: Candidate;
+  /** True only when we know exactly which product this is. */
   matched: boolean;
   cacheHit: boolean;
+  /** Known products the query might mean, when it was not an exact match. */
+  suggestions: string[];
 }
 
 export interface DecideInput {

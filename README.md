@@ -53,6 +53,25 @@ Copy `.env.example` → `.env` to configure. Local catalog is always tried first
 | `src/db` | Schema + mappers |
 | `scripts/` | Launch + zip helpers |
 
+## How a verdict is made
+
+1. **Match** (`src/core/match.ts`): the query must name one exact model. Every word of a
+   product name has to be present, and nothing in the query may point at a different
+   model (`Pro Max` ≠ `Pro`, `AirPods Max` ≠ `AirPods Pro`). Vague queries (`ipad`)
+   get "Did you mean…?" suggestions instead of a silent substitute. Unknown models go
+   to the LLM, which is told to return that exact model or nothing.
+2. **Normalise** (`src/core/specs.ts`): every category has a fixed spec schema (key,
+   direction, importance, noticeable-change threshold). Catalog, LLM and old database
+   rows are all mapped onto it.
+3. **Compare** (`src/core/compare.ts`): each spec is *better*, *worse*, *about the
+   same*, *different* (e.g. screen size) or *no data*. Core specs score 2, minor
+   specs 1, half if the change is small. Missing data is never scored.
+4. **Decide** (`src/core/verdict.ts`): net score after losses → skip / wait / buy, with
+   a lower bar when your device is 3+ years old. The LLM may reword the explanation
+   but cannot change the verdict.
+
+Run `npm test` to check matcher and verdict behaviour (no build needed).
+
 ## Troubleshooting
 
 See **START-HERE.md**. Common fixes:

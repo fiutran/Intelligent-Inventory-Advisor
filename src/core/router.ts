@@ -1,6 +1,7 @@
 import { SEED_OWNED } from '../data/seed.js';
 import { classify } from './classifier.js';
-import { findOwned, findSameName } from './ownership.js';
+import { sameProduct } from './match.js';
+import { findOwned } from './ownership.js';
 import { buildVerdictFromContext } from './verdict.js';
 import type {
   AppState,
@@ -16,6 +17,8 @@ export interface RouterDeps {
   catalog?: CatalogItem[];
   inventory?: OwnedItem[];
   state?: AppState;
+  /** Clock override for tests (device age). */
+  now?: Date;
   researchProduct?: (query: string) => Promise<CatalogItem | null>;
   refineVerdict?: (input: {
     candidate: DecideResult['verdict']['candidate'];
@@ -48,17 +51,18 @@ export async function decide(input: DecideInput, deps: RouterDeps = {}): Promise
 
   const { candidate } = classifyResult;
 
-  const ownedItem = findOwned(inventory, candidate.cat);
-  const exactDuplicate =
-    classifyResult.matched &&
-    ownedItem !== null &&
-    findSameName(inventory, candidate.name) !== null;
+  // Prefer the exact same model if it's owned; otherwise the newest item in the category.
+  const duplicate = classifyResult.matched
+    ? (inventory.find((o) => sameProduct(o.name, candidate.name)) ?? null)
+    : null;
+  const ownedItem = duplicate ?? findOwned(inventory, candidate.cat);
 
   let verdict = buildVerdictFromContext({
     candidate,
     ownedItem,
     matched: classifyResult.matched,
-    exactDuplicate,
+    exactDuplicate: duplicate !== null,
+    now: deps.now,
   });
 
   if (deps.refineVerdict) {
@@ -74,8 +78,10 @@ export async function decide(input: DecideInput, deps: RouterDeps = {}): Promise
           rationale: verdict.rationale,
         },
       });
+      // The LLM may only reword the explanation. The verdict and its tag come from
+      // the rules, so the headline can never contradict the comparison table.
       if (polished) {
-        verdict = { ...verdict, ...polished };
+        verdict = { ...verdict, head: polished.head, rationale: polished.rationale };
       }
     } catch (err) {
       console.warn('[decide] refineVerdict failed:', err instanceof Error ? err.message : err);

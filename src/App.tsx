@@ -39,23 +39,35 @@ export default function App() {
   const [showVerdict, setShowVerdict] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
 
-  const serverHint = 'Start the app with START.bat or npm run host';
+  /** One path for every "weigh this" entry point: typed query, suggestion chip, saved item. */
+  const weighItem = useCallback(
+    async (name: string) => {
+      const q = name.trim();
+      if (!q) {
+        toast.show('Type what you’re thinking of buying');
+        return;
+      }
+      if (busy) return;
+      setBusy(true);
+      try {
+        const result = await runDecide(q, null);
+        setQuery(q);
+        setVerdict(result.verdict);
+        setSuggestions(result.classify.suggestions ?? []);
+        setShowVerdict(true);
+      } catch (e) {
+        toast.show(e instanceof Error && e.message ? `Couldn’t weigh it: ${e.message}` : 'Couldn’t weigh it');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, runDecide, toast],
+  );
 
-  const weigh = useCallback(async () => {
-    const q = query.trim();
-    if (!q) {
-      toast.show('Type what you’re thinking of buying');
-      return;
-    }
-    try {
-      const result = await runDecide(q, null);
-      setVerdict(result.verdict);
-      setShowVerdict(true);
-    } catch {
-      toast.show(serverHint);
-    }
-  }, [query, runDecide, toast]);
+  const weigh = useCallback(() => weighItem(query), [weighItem, query]);
 
   const justLog = useCallback(() => {
     const q = query.trim();
@@ -69,7 +81,7 @@ export default function App() {
         toast.show(`Saved “${q}” under Thinking about`);
         setTab('inv');
       } catch {
-        toast.show(serverHint);
+        toast.show('Could not save item');
       }
     })();
   }, [query, logConsidering, toast]);
@@ -145,17 +157,9 @@ export default function App() {
     (name: string) => {
       setQuery(name);
       setTab('decide');
-      void (async () => {
-        try {
-          const result = await runDecide(name, null);
-          setVerdict(result.verdict);
-          setShowVerdict(true);
-        } catch {
-          toast.show(serverHint);
-        }
-      })();
+      void weighItem(name);
     },
-    [runDecide, toast],
+    [weighItem],
   );
 
   const handleReset = useCallback(() => {
@@ -231,6 +235,8 @@ export default function App() {
         {showVerdict && verdict ? (
           <VerdictScreen
             verdict={verdict}
+            suggestions={suggestions}
+            onPickSuggestion={(name) => void weighItem(name)}
             onSkip={handleSkip}
             onBuy={handleBuy}
             onBack={() => setShowVerdict(false)}
@@ -240,6 +246,7 @@ export default function App() {
             query={query}
             onQueryChange={setQuery}
             onWeigh={() => void weigh()}
+            busy={busy}
             onJustLog={justLog}
             owned={owned.map((item) => ({ name: item.name, icon: item.icon }))}
           />

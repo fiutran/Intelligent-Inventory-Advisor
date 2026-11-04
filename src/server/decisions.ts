@@ -1,5 +1,7 @@
 import type { Category, ClassifyResult, Verdict } from '../core/types.js';
-import { findCatalogItem, withOwnershipWeights } from '../data/seed.js';
+import { sameProduct } from '../core/match.js';
+import { normalizeSpecs } from '../core/specs.js';
+import { findCatalogItem } from '../data/seed.js';
 import { CATEGORY_IDS, categoryNameById, verdictToNewDecision } from '../db/map.js';
 import type { DecisionPayload, NewDecisionRow } from '../db/types.js';
 import type { AppDatabase } from './db.js';
@@ -119,7 +121,7 @@ export function completeDecision(
     const owned = findOwnedInCategory(db, userId, dec.category_id);
     if (owned) {
       const ownedName = owned.brand ? `${owned.brand} ${owned.model}` : owned.model;
-      if (ownedName === dec.payload.candidate.name) {
+      if (sameProduct(ownedName, dec.payload.candidate.name)) {
         db.prepare(`
           UPDATE decision SET purchased = ?, bought_against_advice = ? WHERE decision_id = ?
         `).run(purchased, boughtAgainstAdvice ? 1 : 0, decisionId);
@@ -140,7 +142,7 @@ export function completeDecision(
         parts.length >= 2 ? parts.slice(1).join(' ') : dec.payload.candidate.name;
       const hit = findCatalogItem(dec.payload.candidate.name);
       const specs = hit
-        ? withOwnershipWeights(hit.specs, cat as Category)
+        ? normalizeSpecs(hit.specs, cat as Category)
         : [];
 
       addInventoryItem(db, {

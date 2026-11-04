@@ -21,7 +21,8 @@
     "demo": "tsx src/demo.ts",
     "demo:db": "tsx src/db/demo.ts",
     "typecheck": "tsc --noEmit",
-    "build:vercel": "node scripts/build-vercel.mjs"
+    "build:vercel": "node scripts/build-vercel.mjs",
+    "test": "node --experimental-strip-types --no-warnings --import ./scripts/ts-register.mjs --test \"tests/*.test.ts\""
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",

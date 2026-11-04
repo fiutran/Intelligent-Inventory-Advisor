@@ -9,6 +9,7 @@ interface DecideScreenProps {
   onWeigh: () => void;
   onJustLog: () => void;
   owned: DecideOwned[];
+  busy?: boolean;
 }
 
 export function DecideScreen({
@@ -17,6 +18,7 @@ export function DecideScreen({
   onWeigh,
   onJustLog,
   owned,
+  busy = false,
 }: DecideScreenProps) {
   return (
     <section className="screen decide fade">
@@ -56,8 +58,14 @@ export function DecideScreen({
         </div>
 
         <div className="decide-foot">
-          <button type="button" className="btn primary" onClick={onWeigh}>
-            <span>Weigh it against my stuff</span>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={onWeigh}
+            disabled={busy}
+            aria-busy={busy}
+          >
+            <span>{busy ? 'Checking specs…' : 'Weigh it against my stuff'}</span>
           </button>
           <button type="button" className="btn ghost" onClick={onJustLog}>
             <span className="ic">＋</span>

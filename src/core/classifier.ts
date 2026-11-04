@@ -1,29 +1,38 @@
-import { CATEGORY_LABEL, CATEGORY_WORDS, findCatalogItem, SEED_CATALOG } from '../data/seed.js';
-import type {
-  Candidate,
-  CatalogItem,
-  Category,
-  ClassifyResult,
-  OwnedItem,
-  Spec,
-} from './types.js';
+import {
+  CATEGORY_LABEL,
+  CATEGORY_ORDER,
+  CATEGORY_WORDS,
+  SEED_CATALOG,
+} from '../data/seed.js';
+import { matchProduct, tokenize } from './match.js';
+import type { Candidate, CatalogItem, Category, ClassifyResult, OwnedItem, Spec } from './types.js';
 
 export interface ClassifierDeps {
   catalog?: CatalogItem[];
   owned?: OwnedItem[];
-  /** Async lookup for unknown products (LLM / remote cache). */
+  /** Exact lookup for products outside the catalog (DB cache, then LLM research). */
   researchProduct?: (query: string) => Promise<CatalogItem | null>;
 }
 
-function guessCategory(query: string): Category | null {
-  const q = query.toLowerCase();
-  for (const cat of Object.keys(CATEGORY_WORDS) as Category[]) {
-    if (CATEGORY_WORDS[cat].some((w) => q.includes(w))) return cat;
+/**
+ * Best-guess category from words in the query. Whole-word prefix match, so
+ * "headphones" is not a phone and "Galaxy Buds" is earbuds, not a phone.
+ */
+export function guessCategory(query: string): Category | null {
+  const padded = ` ${tokenize(query).join(' ')} `;
+  // The most specific (longest) matching phrase wins, so "AirPods Max" (headphones)
+  // beats "airpod" (earbuds). Ties go to CATEGORY_ORDER, which lists phones last.
+  let best: { cat: Category; len: number } | null = null;
+  for (const cat of CATEGORY_ORDER) {
+    for (const w of CATEGORY_WORDS[cat]) {
+      const phrase = tokenize(w).join(' ');
+      if (!phrase || !padded.includes(` ${phrase}`)) continue;
+      const len = phrase.split(' ').length;
+      if (!best || len > best.len) best = { cat, len };
+    }
   }
-  return null;
+  return best?.cat ?? null;
 }
-
-export { guessCategory };
 
 function iconForCategory(cat: Category | null, owned: OwnedItem[]): string {
   if (!cat) return '🛍️';
@@ -42,7 +51,9 @@ function fromCatalog(hit: CatalogItem, price: number | null): Candidate {
 }
 
 /**
- * Local catalog first, then optional research (LLM), then weak category guess.
+ * 1. Exact match in the catalog.
+ * 2. Exact lookup elsewhere (cache / LLM), only if the catalog had no exact match.
+ * 3. Otherwise: category guess + "did you mean" suggestions. Never a substitute product.
  */
 export async function classify(
   query: string,
@@ -51,10 +62,15 @@ export async function classify(
 ): Promise<ClassifyResult> {
   const catalog = deps.catalog ?? SEED_CATALOG;
   const owned = deps.owned ?? [];
-  const hit = findCatalogItem(query, catalog);
+  const match = matchProduct(query, catalog);
 
-  if (hit) {
-    return { candidate: fromCatalog(hit, price), matched: true, cacheHit: true };
+  if (match.product) {
+    return {
+      candidate: fromCatalog(match.product, price),
+      matched: true,
+      cacheHit: true,
+      suggestions: [],
+    };
   }
 
   if (deps.researchProduct) {
@@ -65,6 +81,7 @@ export async function classify(
           candidate: fromCatalog(researched, price),
           matched: true,
           cacheHit: false,
+          suggestions: [],
         };
       }
     } catch (err) {
@@ -72,33 +89,20 @@ export async function classify(
     }
   }
 
-  const cat = guessCategory(query);
-  if (cat) {
-    return {
-      candidate: {
-        name: query,
-        icon: iconForCategory(cat, owned),
-        cat,
-        price,
-        meta: CATEGORY_LABEL[cat],
-        specs: null,
-      },
-      matched: false,
-      cacheHit: false,
-    };
-  }
-
+  const suggestions = match.suggestions.map((s) => s.name);
+  const cat = guessCategory(query) ?? match.suggestions[0]?.cat ?? null;
   return {
     candidate: {
-      name: query,
-      icon: '🛍️',
-      cat: null,
+      name: query.trim(),
+      icon: iconForCategory(cat, owned),
+      cat,
       price,
-      meta: 'unrecognised',
+      meta: cat ? CATEGORY_LABEL[cat] : 'unrecognised',
       specs: null,
     },
     matched: false,
     cacheHit: false,
+    suggestions,
   };
 }
 

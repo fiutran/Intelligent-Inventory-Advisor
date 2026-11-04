@@ -1,3 +1,4 @@
+import { sameProduct } from '../core/match.js';
 import { CATEGORY_WORDS, SEED_CATALOG, SEED_OWNED } from '../data/seed.js';
 import type { CatalogItem, Category, OwnedItem, Spec, Verdict } from '../core/types.js';
 import type { ClassifyResult } from '../core/types.js';
@@ -168,7 +169,7 @@ export function branchFromVerdictContext(
   const exactDuplicate =
     classify.matched &&
     verdict.ownedItem !== null &&
-    verdict.candidate.name === verdict.ownedItem.name;
+    sameProduct(verdict.candidate.name, verdict.ownedItem.name);
 
   if (exactDuplicate) return 'duplicate';
   if (classify.matched && verdict.ownedItem && verdict.comparison) return 'upgrade';

@@ -3,7 +3,8 @@ import { cors } from 'hono/cors';
 import { isLlmConfigured, readLlmConfig, refineVerdict, researchProduct } from '../adapters/llm.js';
 import { decide, guessCategory } from '../core/index.js';
 import type { CatalogItem, OwnedItem, Verdict } from '../core/types.js';
-import { findCatalogItem, SEED_CATALOG, withOwnershipWeights } from '../data/seed.js';
+import { normalizeSpecs } from '../core/specs.js';
+import { findCatalogItem, SEED_CATALOG } from '../data/seed.js';
 import { CATEGORY_IDS, CATEGORY_ICONS } from '../db/map.js';
 import {
   findCachedProduct,
@@ -65,7 +66,7 @@ async function enrichOwnedForDecide(
     try {
       const product = await resolveProduct(db, item.name);
       if (product && product.specs.length > 0) {
-        const specs = withOwnershipWeights(product.specs, item.cat);
+        const specs = normalizeSpecs(product.specs, item.cat);
         persistOwnedSpecs(db, item.item_id, specs, product.meta, product.icon);
         out.push({
           cat: item.cat,
@@ -184,7 +185,7 @@ export function createApp(db: AppDatabase, options: CreateAppOptions = {}) {
           persistOwnedSpecs(
             db,
             itemId,
-            withOwnershipWeights(product.specs, product.cat),
+            normalizeSpecs(product.specs, product.cat),
             product.meta,
             product.icon,
           );

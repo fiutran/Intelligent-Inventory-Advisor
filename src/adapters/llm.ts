@@ -1,3 +1,5 @@
+import { guessCategory } from '../core/classifier.js';
+import { normalizeSpecs, schemaPromptLines } from '../core/specs.js';
 import { CATEGORY_ICONS } from '../db/map.js';
 import type {
   Candidate,
@@ -21,6 +23,8 @@ const CATEGORIES: Category[] = [
   'tv',
   'speaker',
 ];
+
+const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS ?? 20000);
 
 export interface ResearchedProduct {
   name: string;
@@ -77,6 +81,8 @@ async function chatJson<T>(system: string, user: string): Promise<T> {
       Authorization: `Bearer ${cfg.apiKey}`,
     },
     body: JSON.stringify(payload),
+    // Never let a slow model hang the Decide screen.
+    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -102,45 +108,18 @@ function asCategory(raw: unknown): Category | null {
   return CATEGORIES.includes(c) ? c : null;
 }
 
-function normalizeSpecs(raw: unknown, cat: Category): Spec[] {
+/** Shape check only; key mapping and ordering is done by core normalizeSpecs. */
+function parseRawSpecs(raw: unknown, cat: Category): Spec[] {
   if (!Array.isArray(raw)) return [];
-  const keyMap: Record<string, string> = {
-    processor: 'Chip',
-    chipset: 'Chip',
-    soc: 'Chip',
-    cpu: 'Chip',
-    screen: 'Display',
-    'rear camera': 'Main camera',
-    camera: 'Main camera',
-    'main camera': 'Main camera',
-    zoom: 'Tele zoom',
-    telephoto: 'Tele zoom',
-    'tele zoom': 'Tele zoom',
-    connector: 'Port',
-    'usb port': 'Port',
-    battery: 'Battery video',
-    'battery life': 'Battery video',
-    'video playback': 'Battery video',
-    mass: 'Weight',
-  };
-
-  const out: Spec[] = [];
+  const rows: Spec[] = [];
   for (const row of raw) {
     if (!row || typeof row !== 'object') continue;
     const r = row as Record<string, unknown>;
-    let k = typeof r.k === 'string' ? r.k.trim() : '';
-    let v = typeof r.v === 'string' ? r.v.trim() : '';
-    if (!k || !v) continue;
-    const mapped = keyMap[k.toLowerCase()];
-    if (mapped) k = mapped;
-    // If model stuffed extra detail into w, append when w isn't high/low
-    if (typeof r.w === 'string' && r.w !== 'high' && r.w !== 'low' && r.w.trim()) {
-      v = `${v} (${r.w.trim()})`;
-    }
-    const w = r.w === 'high' || r.w === 'low' ? r.w : undefined;
-    out.push(w ? { k, v, w } : { k, v });
+    const k = typeof r.k === 'string' ? r.k.trim() : '';
+    const v = typeof r.v === 'string' ? r.v.trim() : typeof r.v === 'number' ? String(r.v) : '';
+    if (k && v) rows.push({ k, v });
   }
-  return out.slice(0, 12);
+  return normalizeSpecs(rows, cat).slice(0, 12);
 }
 
 /**
@@ -153,22 +132,21 @@ export async function researchProduct(query: string): Promise<ResearchedProduct 
     cat?: string;
     meta?: string;
     price_eur?: number | null;
-    specs?: Array<{ k?: string; v?: string; w?: string }>;
+    specs?: Array<{ k?: string; v?: string }>;
     aliases?: string[];
     unknown?: boolean;
   };
-
-  const phoneSpecHint =
-    'For phones, prefer these exact keys when possible: Chip, Display, Main camera, Tele zoom, Port, Battery video, Weight.';
 
   const raw = await chatJson<Raw>(
     `You are a product researcher for an upgrade-advisor app.
 Return JSON only. Use typical retail Euro street price estimates when exact is unknown.
 Categories must be one of: ${CATEGORIES.join(', ')}.
-Specs must be short comparable rows: { "k": "label", "v": "value", "w": "high"|"low" }.
-w must be ONLY "high" or "low" (high = buying-decision specs like camera, chip, power, ANC, sensor, ports).
-${phoneSpecHint}
-IMPORTANT: If the query looks like a real product name or model (including rumored, upcoming, or newly announced devices), set "unknown": false and fill best-known or widely reported specs. Only set "unknown": true for gibberish or clearly non-product text.`,
+Specs are rows { "k": "key", "v": "value with unit" }. Use EXACTLY these keys for the category, in this format:
+${schemaPromptLines()}
+Only include a spec if you are confident of its official value. Omit it otherwise; a missing spec is shown as "no data", a wrong one misleads the user.
+If the product does not have a feature (e.g. no telephoto lens), give "None".
+Name the exact model the query refers to. Do not substitute a nearby model (a "Pro Max" query is not the "Pro").
+Set "unknown": true if the text is not a real, released product you have reliable data for.`,
     `Research this product for upgrade comparison: "${query}"
 
 Return:
@@ -178,20 +156,19 @@ Return:
   "meta": "short variant e.g. 256 GB",
   "price_eur": 999,
   "aliases": ["optional search aliases"],
-  "specs": [{"k":"Chip","v":"Snapdragon 8 Elite","w":"high"}],
+  "specs": [{"k":"Chip","v":"Snapdragon 8 Elite"},{"k":"Battery","v":"30 h video"}],
   "unknown": false
 }`,
   );
 
-  // Only reject gibberish, never drop a named product just because it's new/rumored
-  if (raw.unknown === true && !raw.name && !asCategory(raw.cat)) return null;
+  if (raw.unknown === true) return null;
 
-  const cat = asCategory(raw.cat) ?? guessCategoryFromQuery(query);
+  const cat = asCategory(raw.cat) ?? guessCategory(query);
   if (!cat) return null;
   const name = (raw.name ?? query).trim();
   if (!name) return null;
 
-  const specs = normalizeSpecs(raw.specs, cat);
+  const specs = parseRawSpecs(raw.specs, cat);
   const price =
     typeof raw.price_eur === 'number' && Number.isFinite(raw.price_eur)
       ? Math.round(raw.price_eur)
@@ -210,23 +187,9 @@ Return:
   };
 }
 
-function guessCategoryFromQuery(query: string): Category | null {
-  const q = query.toLowerCase();
-  if (/phone|iphone|galaxy|pixel|samsung|xiaomi|oneplus/.test(q)) return 'phone';
-  if (/airpod|earbud|buds/.test(q)) return 'earbuds';
-  if (/headphone|xm5|xm4/.test(q)) return 'headphones';
-  if (/charger|gan|watt/.test(q)) return 'charger';
-  if (/camera|sony α|a7|a6400/.test(q)) return 'camera';
-  if (/ipad|tablet/.test(q)) return 'tablet';
-  if (/macbook|laptop/.test(q)) return 'laptop';
-  if (/watch/.test(q)) return 'watch';
-  if (/\btv\b/.test(q)) return 'tv';
-  if (/speaker|soundbar/.test(q)) return 'speaker';
-  return null;
-}
-
 /**
- * Improve the verdict copy (and optionally kind) using the rule-based draft + delta table.
+ * Reword the verdict explanation. The verdict itself (kind) is fixed by the rules and
+ * is returned unchanged, so the AI can never contradict the comparison table.
  */
 export async function refineVerdict(input: {
   candidate: Candidate;
@@ -235,18 +198,15 @@ export async function refineVerdict(input: {
   draft: Pick<Verdict, 'kind' | 'tag' | 'head' | 'rationale'>;
 }): Promise<{ kind: VerdictKind; tag: string; head: string; rationale: string } | null> {
   type Raw = {
-    kind?: string;
-    tag?: string;
     head?: string;
     rationale?: string;
   };
 
-  const kinds: VerdictKind[] = ['skip', 'wait', 'buy', 'clear'];
   const raw = await chatJson<Raw>(
-    `You advise people whether an upgrade is worth buying vs what they already own.
-Be concise, concrete, and honest. Prefer keeping money unless gains are clear.
-kind must be one of: skip, wait, buy, clear.
-"clear" = new category / no overlap. "skip" = not worth it. "wait" = borderline. "buy" = worth it.
+    `You rewrite the explanation for a purchase verdict so it reads naturally.
+The verdict ("kind") is already decided. Do not argue with it or soften it.
+Only mention specs that appear in the comparison; never add facts or numbers of your own.
+"head" is one short sentence. "rationale" is 2-3 plain sentences a non-technical person understands.
 Return JSON only.`,
     JSON.stringify(
       {
@@ -264,18 +224,20 @@ Return JSON only.`,
               specs: input.ownedItem.specs,
             }
           : null,
-        comparison: input.comparison,
-        rule_based_draft: input.draft,
+        comparison: (input.comparison ?? [])
+          .filter((r) => r.kind !== 'unknown')
+          .map((r) => ({ spec: r.k, yours: r.own, considering: r.cand, result: r.label || 'Same' })),
+        verdict: input.draft,
       },
       null,
       2,
     ) +
-      `\n\nReturn: { "kind": "...", "tag": "Verdict · ...", "head": "one short line", "rationale": "2-3 sentences" }`,
+      `\n\nReturn: { "head": "one short line", "rationale": "2-3 sentences" }`,
   );
 
-  const kind = kinds.includes(raw.kind as VerdictKind) ? (raw.kind as VerdictKind) : input.draft.kind;
+  const kind = input.draft.kind;
   const head = (raw.head ?? '').trim() || input.draft.head;
   const rationale = (raw.rationale ?? '').trim() || input.draft.rationale;
-  const tag = (raw.tag ?? '').trim() || input.draft.tag;
+  const tag = input.draft.tag;
   return { kind, tag, head, rationale };
 }

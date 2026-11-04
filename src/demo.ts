@@ -16,8 +16,9 @@ for (const { query, label } of scenarios) {
   console.log(`   ${verdict.tag}`);
   console.log(`   → ${verdict.head}`);
   if (verdict.comparison?.length) {
-    const gains = verdict.comparison.filter((r) => r.kind === 'mean' || r.kind === 'new').length;
-    console.log(`   ${gains} real gains across ${verdict.comparison.length} specs`);
+    const better = verdict.comparison.filter((r) => r.kind === 'better').length;
+    const worse = verdict.comparison.filter((r) => r.kind === 'worse').length;
+    console.log(`   ${better} better, ${worse} worse across ${verdict.comparison.length} specs`);
   }
   console.log();
 }

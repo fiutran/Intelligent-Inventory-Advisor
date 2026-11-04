@@ -1,4 +1,6 @@
-import { findCatalogItem, normalizeProductQuery, withOwnershipWeights } from '../data/seed.js';
+import { matchProduct, tokenize } from '../core/match.js';
+import { normalizeSpecs } from '../core/specs.js';
+import { findCatalogItem, normalizeProductQuery } from '../data/seed.js';
 import type { CatalogItem, Category, Spec } from '../core/types.js';
 import { CATEGORY_IDS, CATEGORY_ICONS, categoryNameById, productKey } from '../db/map.js';
 import type { AppDatabase } from './db.js';
@@ -29,48 +31,35 @@ function rowToCatalog(raw: Record<string, unknown>, aliases: string[]): CatalogI
     name,
     price: (raw.price as number) ?? 0,
     meta: (raw.summary as string) || '',
-    specs: withOwnershipWeights(specs, cat),
+    specs: normalizeSpecs(specs, cat),
   };
 }
 
-/** Look up a product in SQLite cache (including seed + LLM-researched). */
-export function findCachedProduct(db: AppDatabase, query: string): CatalogItem | null {
-  const q = normalizeProductQuery(query);
-  if (!q) return null;
-
-  const byAlias = db
-    .prepare(
-      `SELECT p.* FROM product_alias a
-       JOIN product_cache p ON p.product_key = a.product_key
-       WHERE lower(a.alias) = ? LIMIT 1`,
-    )
-    .get(q) as Record<string, unknown> | undefined;
-
-  if (byAlias) {
-    const aliases = (
-      db
-        .prepare(`SELECT alias FROM product_alias WHERE product_key = ?`)
-        .all(byAlias.product_key as string) as { alias: string }[]
-    ).map((r) => r.alias);
-    return rowToCatalog(byAlias, aliases);
+/** Every cached product (seed + LLM-researched) with its aliases. */
+function loadCachedCatalog(db: AppDatabase): CatalogItem[] {
+  const aliasRows = db.prepare(`SELECT product_key, alias FROM product_alias`).all() as {
+    product_key: string;
+    alias: string;
+  }[];
+  const aliasesByKey = new Map<string, string[]>();
+  for (const r of aliasRows) {
+    const list = aliasesByKey.get(r.product_key) ?? [];
+    list.push(r.alias);
+    aliasesByKey.set(r.product_key, list);
   }
-
   const rows = db.prepare(`SELECT * FROM product_cache`).all() as Record<string, unknown>[];
-  for (const raw of rows) {
-    const brand = raw.brand as string | null;
-    const model = raw.model as string;
-    const name = brand ? `${brand} ${model}` : model;
-    if (normalizeProductQuery(name) === q || normalizeProductQuery(name).includes(q) || q.includes(normalizeProductQuery(name))) {
-      const aliases = (
-        db
-          .prepare(`SELECT alias FROM product_alias WHERE product_key = ?`)
-          .all(raw.product_key as string) as { alias: string }[]
-      ).map((r) => r.alias);
-      const item = rowToCatalog(raw, aliases);
-      if (item) return item;
-    }
-  }
-  return null;
+  return rows
+    .map((raw) => rowToCatalog(raw, aliasesByKey.get(raw.product_key as string) ?? []))
+    .filter((x): x is CatalogItem => x !== null);
+}
+
+/**
+ * Look up a product in the SQLite cache using the same strict matcher as the catalog:
+ * an exact model or nothing. Never a "close enough" substitute.
+ */
+export function findCachedProduct(db: AppDatabase, query: string): CatalogItem | null {
+  if (!tokenize(query).length) return null;
+  return matchProduct(query, loadCachedCatalog(db)).product;
 }
 
 export function upsertResearchedProduct(
@@ -81,7 +70,7 @@ export function upsertResearchedProduct(
   const key = productKey({ name: product.name, cat: product.cat });
   const { brand, model } = splitBrandModel(product.name);
   const now = new Date().toISOString();
-  const specs = withOwnershipWeights(product.specs, product.cat);
+  const specs = normalizeSpecs(product.specs, product.cat);
 
   db.prepare(`
     INSERT INTO product_cache (product_key, category_id, brand, model, summary, icon, price, specs, source, researched_at, expires_at)
@@ -108,7 +97,8 @@ export function upsertResearchedProduct(
   const aliases = new Set(
     [query, product.name, ...product.aliases]
       .map((a) => normalizeProductQuery(a))
-      .filter(Boolean),
+      // a one-word alias ("iphone") would claim a whole product family
+      .filter((a) => a.split(' ').length >= 2),
   );
 
   const maxAlias = db.prepare('SELECT COALESCE(MAX(alias_id), 0) AS n FROM product_alias').get() as {

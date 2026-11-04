@@ -1,6 +1,7 @@
 import type { Category, OwnedItem, Provenance } from '../core/types.js';
 import type { InventoryListItem } from '../core/types.js';
-import { enrichOwnedFromCatalog, findCatalogItem, withOwnershipWeights } from '../data/seed.js';
+import { normalizeSpecs } from '../core/specs.js';
+import { enrichOwnedFromCatalog, findCatalogItem } from '../data/seed.js';
 import { CATEGORY_IDS, CATEGORY_ICONS, categoryNameById, inventoryRowToOwned } from '../db/map.js';
 import type { InventoryItemRow, InventoryStatus } from '../db/types.js';
 import type { AppDatabase } from './db.js';
@@ -208,7 +209,7 @@ export function addManualItem(
   const nameParts = displayName.split(/\s+/);
   const brand = nameParts.length >= 2 ? nameParts[0] : null;
   const model = nameParts.length >= 2 ? nameParts.slice(1).join(' ') : displayName;
-  const specs = hit ? withOwnershipWeights(hit.specs, cat) : [];
+  const specs = hit ? normalizeSpecs(hit.specs, cat) : [];
 
   return addInventoryItem(db, {
     user_id: input.userId,
