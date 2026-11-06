@@ -2,20 +2,19 @@ import { useCallback, useState } from 'react';
 import type { Verdict } from './core/types.js';
 import { AddScreen } from './app/components/AddScreen';
 import { DecideScreen } from './app/components/DecideScreen';
+import { ModelPicker, type ModelChoice } from './app/components/ModelPicker';
+import { api } from './app/api/client';
 import { InventoryScreen } from './app/components/InventoryScreen';
 import { TabBar } from './app/components/TabBar';
 import { Toast } from './app/components/Toast';
 import { VerdictScreen } from './app/components/VerdictScreen';
 import type { TabId } from './app/constants';
+
+import { CURRENCIES, formatMoney } from './core/currency';
 import { useAppState } from './app/hooks/useAppState';
+import { useCurrency } from './app/hooks/useCurrency';
 import { useTheme } from './app/hooks/useTheme';
 import { useToast } from './app/hooks/useToast';
-
-const TAB_TITLE: Record<TabId, string> = {
-  decide: 'Decide',
-  inv: 'Inventory',
-  add: 'Add',
-};
 
 export default function App() {
   const {
@@ -32,6 +31,7 @@ export default function App() {
     removeItem,
     resetData,
   } = useAppState();
+  const { currency, setCurrency } = useCurrency();
   const { toggle: toggleTheme } = useTheme();
   const toast = useToast();
 
@@ -39,23 +39,53 @@ export default function App() {
   const [showVerdict, setShowVerdict] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<'models' | 'check' | null>(null);
+  const [choices, setChoices] = useState<ModelChoice[] | null>(null);
 
-  const serverHint = 'Start the app with START.bat or npm run host';
+  const serverHint = 'The app isn’t running. Double-click START.bat, then refresh.';
 
-  const weigh = useCallback(async () => {
-    const q = query.trim();
-    if (!q) {
-      toast.show('Type what you’re thinking of buying');
-      return;
-    }
-    try {
-      const result = await runDecide(q, null);
-      setVerdict(result.verdict);
-      setShowVerdict(true);
-    } catch {
-      toast.show(serverHint);
-    }
-  }, [query, runDecide, toast]);
+  const weigh = useCallback(
+    async (raw?: string, picked = false) => {
+      const q = (raw ?? query).trim();
+      if (!q) {
+        toast.show('Type the thing you’re tempted by');
+        return;
+      }
+      if (raw) setQuery(raw);
+      setBusy(true);
+      setPhase(picked ? 'check' : 'models');
+      try {
+        let target = q;
+        if (!picked) {
+          const suggestion = await api.suggest(q, currency);
+          if (suggestion.choose && suggestion.models.length > 1) {
+            setChoices(suggestion.models);
+            setPhase(null);
+            setBusy(false);
+            return;
+          }
+          if (suggestion.models[0]?.name) {
+            target = suggestion.models[0].name;
+            setQuery(target);
+          }
+        }
+        setChoices(null);
+        setPhase('check');
+        const lookup = picked ? `${q} (${query})` : target;
+        if (picked) setQuery(q);
+        const result = await runDecide(lookup, null, currency);
+        setVerdict(result.verdict);
+        setShowVerdict(true);
+      } catch {
+        toast.show(serverHint);
+      } finally {
+        setBusy(false);
+        setPhase(null);
+      }
+    },
+    [query, currency, runDecide, toast],
+  );
 
   const justLog = useCallback(() => {
     const q = query.trim();
@@ -66,7 +96,7 @@ export default function App() {
     void (async () => {
       try {
         await logConsidering(q);
-        toast.show(`Saved “${q}” under Thinking about`);
+        toast.show(`Saved. “${q}” is on your mind.`);
         setTab('inv');
       } catch {
         toast.show(serverHint);
@@ -80,7 +110,9 @@ export default function App() {
       try {
         await logSkip();
         toast.show(
-          `Logged “skipped” · kept ${verdict.candidate.price ? `€${verdict.candidate.price}` : 'the money'}`,
+          verdict.candidate.price
+            ? `You passed. That’s ${formatMoney(verdict.candidate.price, currency)} still yours.`
+            : 'You passed. The money stays yours.',
         );
         setShowVerdict(false);
         setTab('inv');
@@ -88,7 +120,7 @@ export default function App() {
         toast.show('Could not save decision');
       }
     })();
-  }, [verdict, logSkip, toast]);
+  }, [verdict, currency, logSkip, toast]);
 
   const handleBuy = useCallback(() => {
     if (!verdict) return;
@@ -97,12 +129,12 @@ export default function App() {
         const result = await logBuy(verdict);
         if (result.suggestSell && result.retiredName) {
           toast.show(
-            `Filed ${verdict.candidate.name}. Consider selling your old ${result.retiredName}.`,
+            `${verdict.candidate.name} is yours. Your old ${result.retiredName} might be worth selling.`,
           );
         } else if (result.retiredName) {
-          toast.show(`Filed ${verdict.candidate.name} · replaced ${result.retiredName}`);
+          toast.show(`${verdict.candidate.name} is in. ${result.retiredName} steps aside.`);
         } else {
-          toast.show(`Filed ${verdict.candidate.name} to inventory`);
+          toast.show(`${verdict.candidate.name} is now in your stuff.`);
         }
         setShowVerdict(false);
         setTab('inv');
@@ -117,7 +149,7 @@ export default function App() {
       void (async () => {
         try {
           await addItem(input);
-          toast.show(`Saved ${input.name}`);
+          toast.show(`${input.name} is on your list.`);
           setTab('inv');
         } catch {
           toast.show('Could not save item');
@@ -132,7 +164,7 @@ export default function App() {
       void (async () => {
         try {
           await removeItem(itemId);
-          toast.show('Removed');
+          toast.show('Taken off your list.');
         } catch {
           toast.show('Could not remove');
         }
@@ -143,19 +175,11 @@ export default function App() {
 
   const weighConsidering = useCallback(
     (name: string) => {
-      setQuery(name);
       setTab('decide');
-      void (async () => {
-        try {
-          const result = await runDecide(name, null);
-          setVerdict(result.verdict);
-          setShowVerdict(true);
-        } catch {
-          toast.show(serverHint);
-        }
-      })();
+      setShowVerdict(false);
+      void weigh(name);
     },
-    [runDecide, toast],
+    [weigh],
   );
 
   const handleReset = useCallback(() => {
@@ -163,7 +187,7 @@ export default function App() {
     void (async () => {
       try {
         await resetData();
-        toast.show('Cleared. Starting fresh');
+        toast.show('Clean slate. What’s first?');
       } catch {
         toast.show('Could not clear data');
       }
@@ -173,64 +197,68 @@ export default function App() {
   const selectTab = (t: TabId) => {
     setTab(t);
     setShowVerdict(false);
+    setChoices(null);
   };
-
-  const title = showVerdict ? 'Decide' : TAB_TITLE[tab];
-  const showCtx = false;
 
   if (loading) {
     return (
-      <div className="wrap">
-        <p className="caption">Loading…</p>
+      <div className="stage">
+        <div className="glow glow-a" />
+        <div className="glow glow-b" />
+        <p className="caption">Getting your list ready…</p>
       </div>
     );
   }
 
   if (offline) {
     return (
-      <div className="wrap">
-        <div className="brandline">
-          <span className="mark" />
-          <span>
-            <b>Inventory Delta Advisor</b>
-          </span>
-        </div>
-        <p className="caption" style={{ maxWidth: 360 }}>
-          Can&apos;t reach the local server. On this PC, double-click <b>START.bat</b> (or run{' '}
-          <b>npm run host</b>), then refresh this page.
+      <div className="stage">
+        <div className="glow glow-a" />
+        <div className="glow glow-b" />
+        <header className="top">
+          <Brand />
+        </header>
+        <p className="caption">
+          This page can’t reach the app on your computer. Double-click <b>START.bat</b>, then refresh.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="wrap">
-      <div className="brandline">
-        <span className="mark" />
-        <span>
-          <b>Inventory Delta Advisor</b> · runs on this PC
-        </span>
-      </div>
-
-      <div className="phone">
-        <div className="appbar">
-          <div>
-            <h1>{title}</h1>
-            {showCtx && (
-              <div className="ctx">
-                <span className="pin" />
-                Before you buy, check it against what you own
-              </div>
-            )}
-          </div>
-          <button type="button" className="themebtn" aria-label="Toggle theme" onClick={toggleTheme}>
-            ◐
+    <div className="stage">
+      <div className="glow glow-a" />
+      <div className="glow glow-b" />
+      <header className="top">
+        <Brand />
+        <div className="top-actions">
+          <label className="sr" htmlFor="currency">
+            Currency
+          </label>
+          <select
+            id="currency"
+            className="currency"
+            value={currency}
+            aria-label="Currency"
+            onChange={(event) => setCurrency(event.target.value as typeof currency)}
+          >
+            {CURRENCIES.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.code} {item.symbol}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="themebtn" aria-label="Switch light or dark" onClick={toggleTheme}>
+            <span aria-hidden="true">◐</span>
           </button>
         </div>
+      </header>
 
+      <div className="panel">
         {showVerdict && verdict ? (
           <VerdictScreen
             verdict={verdict}
+            currency={currency}
             onSkip={handleSkip}
             onBuy={handleBuy}
             onBack={() => setShowVerdict(false)}
@@ -238,8 +266,11 @@ export default function App() {
         ) : tab === 'decide' ? (
           <DecideScreen
             query={query}
+            busy={busy}
             onQueryChange={setQuery}
             onWeigh={() => void weigh()}
+            onTry={(name) => void weigh(name)}
+            busyLabel={phase === 'models' ? 'Finding models…' : 'Checking…'}
             onJustLog={justLog}
             owned={owned.map((item) => ({ name: item.name, icon: item.icon }))}
           />
@@ -253,16 +284,39 @@ export default function App() {
             onReset={handleReset}
           />
         ) : (
-          <AddScreen onSave={handleManualAdd} />
+          <AddScreen currency={currency} onSave={handleManualAdd} />
         )}
+
+        {choices ? (
+          <ModelPicker
+            query={query}
+            models={choices}
+            currency={currency}
+            busy={busy}
+            onClose={() => setChoices(null)}
+            onPick={(name) => void weigh(name, true)}
+          />
+        ) : null}
 
         <TabBar active={showVerdict ? null : tab} onSelect={selectTab} />
         <Toast message={toast.message} visible={toast.visible} />
       </div>
+    </div>
+  );
+}
 
-      <p className="caption">
-        Type what you might buy. The app checks it against what you own and gives you a verdict.
-      </p>
+function Brand() {
+  return (
+    <div className="brand">
+      <span className="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M6 12.5l4 4 8-9" />
+        </svg>
+      </span>
+      <div>
+        <strong>Intelligent Inventory Advisor</strong>
+        <span>A second opinion before you buy</span>
+      </div>
     </div>
   );
 }

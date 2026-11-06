@@ -1,4 +1,4 @@
-# START HERE: UpgradeSkip
+# START HERE: Intelligent Inventory Advisor
 
 Run this app on **your own computer**. No website account. Your data stays on this PC.
 
@@ -15,7 +15,7 @@ Run this app on **your own computer**. No website account. Your data stays on th
 
 ### 2. Get the app folder
 
-Someone will share a zip or a folder called `UpgradeSkip`.
+Someone will share a zip or a folder called `Intelligent-Inventory-Advisor`.
 
 - If it’s a **zip**: right-click → Extract All → open the folder inside
 - Put it somewhere easy, like Documents
@@ -31,11 +31,11 @@ Double-click **`START.bat`**
 **Mac**
 
 1. Open **Terminal**
-2. Drag the `UpgradeSkip` folder onto the Terminal window (this pastes the path)
+2. Drag the `Intelligent-Inventory-Advisor` folder onto the Terminal window (this pastes the path)
 3. Press Enter after typing: `cd ` (with a space) then the path, or:
 
 ```bash
-cd /path/to/UpgradeSkip
+cd /path/to/Intelligent-Inventory-Advisor
 chmod +x start.sh
 ./start.sh
 ```
@@ -77,7 +77,7 @@ Try typing something like **iPhone 16 Pro** or **AirPods Pro 2** to see differen
 
 Built-in product data covers common phones/chargers/etc. For **any other model**, turn on an LLM:
 
-1. Copy **`.env.example`** → **`.env`** in the UpgradeSkip folder
+1. Copy **`.env.example`** → **`.env`** in the Intelligent Inventory Advisor folder
 2. Put your key in `LLM_API_KEY=...`
 3. Restart the app (`START.bat`)
 
@@ -101,13 +101,13 @@ Without `.env`, the app still works offline using the built-in library only.
 
 1. On a machine that already runs the app, run:
 
-   **Windows (PowerShell in the UpgradeSkip folder):**
+   **Windows (PowerShell in the Intelligent Inventory Advisor folder):**
 
    ```powershell
    npm run pack
    ```
 
-2. That creates **`UpgradeSkip-portable.zip`** next to the project.
+2. That creates **`Intelligent-Inventory-Advisor-portable.zip`** next to the project.
 3. Send that zip (email, Drive, USB).
 4. They follow **First time** above.
 

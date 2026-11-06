@@ -1,4 +1,4 @@
--- Inventory Delta Advisor: backend schema (v2)
+-- Intelligent Inventory Advisor: backend schema (v2)
 -- Includes frontend-aligned fields: provenance, aliases, decision snapshots.
 
 CREATE TABLE "user" (

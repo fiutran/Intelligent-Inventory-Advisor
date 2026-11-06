@@ -1,5 +1,5 @@
 /**
- * Creates UpgradeSkip-portable.zip for sharing with teammates.
+ * Creates Intelligent-Inventory-Advisor-portable.zip for sharing with teammates.
  * Excludes node_modules, data, dist, .git: they rebuild on first START.
  */
 import { spawnSync } from 'node:child_process';
@@ -9,8 +9,8 @@ import { platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const staging = join(root, '.pack-staging', 'UpgradeSkip');
-const outZip = join(root, 'UpgradeSkip-portable.zip');
+const staging = join(root, '.pack-staging', 'Intelligent-Inventory-Advisor');
+const outZip = join(root, 'Intelligent-Inventory-Advisor-portable.zip');
 
 const skip = new Set([
   'node_modules',
@@ -18,7 +18,7 @@ const skip = new Set([
   'dist',
   '.git',
   '.pack-staging',
-  'UpgradeSkip-portable.zip',
+  'Intelligent-Inventory-Advisor-portable.zip',
   'tsconfig.tsbuildinfo',
 ]);
 
@@ -54,7 +54,7 @@ for (const name of [
 writeFileSync(
   join(staging, 'OPEN-ME.txt'),
   [
-    'UpgradeSkip: run on your own computer',
+    'Intelligent Inventory Advisor: run on your own computer',
     '',
     '1. Read START-HERE.md',
     '2. Install Node.js LTS from https://nodejs.org (once)',
@@ -80,7 +80,7 @@ if (platform() === 'win32') {
     process.exit(1);
   }
 } else {
-  const r = spawnSync('zip', ['-r', outZip, 'UpgradeSkip'], {
+  const r = spawnSync('zip', ['-r', outZip, 'Intelligent-Inventory-Advisor'], {
     cwd: join(root, '.pack-staging'),
     stdio: 'inherit',
   });

@@ -1,7 +1,8 @@
 import { SEED_OWNED } from '../data/seed.js';
 import type { AppState, Candidate, OwnedItem, Preferences, Verdict } from '../core/types.js';
 
-const STORAGE_KEY = 'upgrade-skip-state';
+const STORAGE_KEY = 'intelligent-inventory-advisor-state';
+const LEGACY_STORAGE_KEY = 'upgrade-skip-state';
 
 function defaultPreferences(): Preferences {
   return {
@@ -23,7 +24,14 @@ export function loadState(): AppState {
     return createInitialState();
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (raw) {
+        localStorage.setItem(STORAGE_KEY, raw);
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+      }
+    }
     if (!raw) return createInitialState();
     return JSON.parse(raw) as AppState;
   } catch {

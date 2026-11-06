@@ -1,9 +1,21 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { isLlmConfigured, readLlmConfig, refineVerdict, researchProduct } from '../adapters/llm.js';
+import {
+  isLlmConfigured,
+  readLlmConfig,
+  refineVerdict,
+  researchProduct,
+  suggestModels,
+} from '../adapters/llm.js';
+import { convertFromEur, isCurrency, type CurrencyCode } from '../core/currency.js';
 import { decide, guessCategory } from '../core/index.js';
 import type { CatalogItem, OwnedItem, Verdict } from '../core/types.js';
-import { findCatalogItem, SEED_CATALOG, withOwnershipWeights } from '../data/seed.js';
+import {
+  findCatalogItem,
+  findExactCatalogItem,
+  SEED_CATALOG,
+  withOwnershipWeights,
+} from '../data/seed.js';
 import { CATEGORY_IDS, CATEGORY_ICONS } from '../db/map.js';
 import {
   findCachedProduct,
@@ -205,8 +217,45 @@ export function createApp(db: AppDatabase, options: CreateAppOptions = {}) {
     return c.json({ ok: true, ...inventoryPayload(db, userId) });
   });
 
+  app.post('/api/suggest', async (c) => {
+    const body = await c.req.json<{ query?: string; currency?: string }>();
+    const query = body.query?.trim();
+    if (!query) return c.json({ error: 'query is required' }, 400);
+    const currency: CurrencyCode = isCurrency(body.currency) ? body.currency : 'EUR';
+    const inCurrency = (price: number | null) =>
+      price == null || currency === 'EUR' ? price : convertFromEur(price, currency);
+
+    const exact = findExactCatalogItem(query);
+    if (exact) {
+      return c.json({
+        choose: false,
+        models: [{ name: exact.name, meta: exact.meta, price: inCurrency(exact.price) }],
+      });
+    }
+
+    if (!isLlmConfigured()) return c.json({ choose: false, models: [] });
+
+    try {
+      const models = (await suggestModels(query)).map((model) => ({
+        ...model,
+        price: inCurrency(model.price),
+      }));
+      const typed = query.toLowerCase();
+      const onlyTyped = models.length === 1 && models[0].name.toLowerCase() === typed;
+      return c.json({ choose: models.length > 1 && !onlyTyped, models });
+    } catch (err) {
+      console.warn('[suggest] failed:', err instanceof Error ? err.message : err);
+      return c.json({ choose: false, models: [] });
+    }
+  });
+
   app.post('/api/decide', async (c) => {
-    const body = await c.req.json<{ query: string; price?: number | null; user_id?: number }>();
+    const body = await c.req.json<{
+      query: string;
+      price?: number | null;
+      user_id?: number;
+      currency?: string;
+    }>();
     const userId = body.user_id ?? DEFAULT_USER;
     const query = body.query?.trim();
     if (!query) return c.json({ error: 'query is required' }, 400);
@@ -215,7 +264,11 @@ export function createApp(db: AppDatabase, options: CreateAppOptions = {}) {
     const llmOn = isLlmConfigured();
 
     const result = await decide(
-      { query, price: body.price ?? null },
+      {
+        query,
+        price: body.price ?? null,
+        currency: isCurrency(body.currency) ? body.currency : 'EUR',
+      },
       {
         inventory,
         catalog: SEED_CATALOG,
@@ -223,7 +276,11 @@ export function createApp(db: AppDatabase, options: CreateAppOptions = {}) {
           ? async (q) => resolveProduct(db, q)
           : async (q) => findCachedProduct(db, q) ?? findCatalogItem(q) ?? null,
         refineVerdict: llmOn
-          ? async (input) => refineVerdict(input)
+          ? async (input) =>
+              refineVerdict({
+                ...input,
+                currency: isCurrency(body.currency) ? body.currency : 'EUR',
+              })
           : undefined,
       },
     );

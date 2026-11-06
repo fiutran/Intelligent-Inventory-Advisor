@@ -45,10 +45,19 @@ export const api = {
 
   getInventory: () => request<InventoryResponse>('/inventory'),
 
-  decide: (query: string, price: number | null) =>
+  suggest: (query: string, currency: string) =>
+    request<{
+      choose: boolean;
+      models: { name: string; meta: string; price: number | null }[];
+    }>('/suggest', {
+      method: 'POST',
+      body: JSON.stringify({ query, currency }),
+    }),
+
+  decide: (query: string, price: number | null, currency: string) =>
     request<DecideResponse>('/decide', {
       method: 'POST',
-      body: JSON.stringify({ query, price }),
+      body: JSON.stringify({ query, price, currency }),
     }),
 
   completeDecision: (

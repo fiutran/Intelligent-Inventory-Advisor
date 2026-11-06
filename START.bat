@@ -1,9 +1,9 @@
 @echo off
-title UpgradeSkip
+title Intelligent Inventory Advisor
 cd /d "%~dp0"
 
 echo.
-echo  UpgradeSkip
+echo  Intelligent Inventory Advisor
 echo  -----------
 echo  Starting on this computer...
 echo  (First time can take a few minutes.)

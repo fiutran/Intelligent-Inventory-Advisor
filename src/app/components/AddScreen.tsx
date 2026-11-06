@@ -1,19 +1,17 @@
 import { useState } from 'react';
+import { currencySymbol, type CurrencyCode } from '../../core/currency';
+import { CATEGORY_GROUPS } from '../../data/seed';
 
-const CATEGORIES = [
-  { id: 'phone', label: 'Phone' },
-  { id: 'earbuds', label: 'Earbuds' },
-  { id: 'headphones', label: 'Headphones' },
-  { id: 'charger', label: 'Charger' },
-  { id: 'camera', label: 'Camera' },
-  { id: 'tablet', label: 'Tablet' },
-  { id: 'laptop', label: 'Laptop' },
-  { id: 'watch', label: 'Watch' },
-  { id: 'tv', label: 'TV' },
-  { id: 'speaker', label: 'Speaker' },
-] as const;
+const PLACEHOLDER: Record<string, string> = {
+  phone: 'iPhone 14 Pro',
+  headphones: 'Sony WH-1000XM5',
+  laptop: 'MacBook Pro',
+  'personal-care': 'Period massager',
+  kitchen: 'Air fryer',
+};
 
 interface AddScreenProps {
+  currency: CurrencyCode;
   onSave: (input: {
     name: string;
     category: string;
@@ -22,7 +20,7 @@ interface AddScreenProps {
   }) => void;
 }
 
-export function AddScreen({ onSave }: AddScreenProps) {
+export function AddScreen({ currency, onSave }: AddScreenProps) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('phone');
   const [price, setPrice] = useState('');
@@ -45,11 +43,15 @@ export function AddScreen({ onSave }: AddScreenProps) {
 
   return (
     <section className="screen fade">
-      <div className="eyebrow">Add to inventory</div>
-      <p className="lead">What do you already own?</p>
+      <p className="kicker">So the advisor knows you</p>
+      <h2 className="hero hero-sm">What do you already own?</h2>
+      <p className="sub">
+        Pick the kind of electronics. A period massager stays in personal care, so you won’t buy a second one later.
+      </p>
+
       <div>
         <label className="fl" htmlFor="add-name">
-          Item
+          Name
         </label>
         <input
           className="input"
@@ -57,30 +59,36 @@ export function AddScreen({ onSave }: AddScreenProps) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && save()}
-          placeholder="e.g. iPhone 14 Pro"
+          placeholder={PLACEHOLDER[category] ?? 'What is it called?'}
         />
       </div>
+
+      <div className="field-block">
+        <label className="fl" htmlFor="add-cat">
+          Category
+        </label>
+        <select
+          className="input"
+          id="add-cat"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+        >
+          {CATEGORY_GROUPS.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+
       <div className="prow">
         <div>
-          <label className="fl" htmlFor="add-cat">
-            Category
-          </label>
-          <select
-            className="input"
-            id="add-cat"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
           <label className="fl" htmlFor="add-price">
-            Price paid
+            What you paid ({currencySymbol(currency)})
           </label>
           <input
             className="input"
@@ -88,34 +96,26 @@ export function AddScreen({ onSave }: AddScreenProps) {
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             inputMode="numeric"
-            placeholder="optional"
+            placeholder="Optional"
+          />
+        </div>
+        <div>
+          <label className="fl" htmlFor="add-meta">
+            A detail
+          </label>
+          <input
+            className="input"
+            id="add-meta"
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            placeholder="256 GB, black"
           />
         </div>
       </div>
-      <div style={{ marginTop: 13 }}>
-        <label className="fl" htmlFor="add-meta">
-          Notes
-        </label>
-        <input
-          className="input"
-          id="add-meta"
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
-          placeholder="e.g. 256 GB · black"
-        />
-      </div>
-      <button
-        type="button"
-        className="btn primary"
-        style={{ marginTop: 16 }}
-        onClick={save}
-        disabled={!name.trim()}
-      >
-        <span>Save to inventory</span>
+
+      <button type="button" className="btn primary" onClick={save} disabled={!name.trim()}>
+        <span>{name.trim() ? 'Add it to my stuff' : 'Name it first'}</span>
       </button>
-      <p className="caption" style={{ textAlign: 'left', margin: '14px 2px 0' }}>
-        Type what you own so Decide can compare upgrades against it later.
-      </p>
     </section>
   );
 }

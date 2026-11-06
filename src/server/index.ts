@@ -74,7 +74,7 @@ if (serveUi) {
 }
 
 serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`UpgradeSkip running at http://localhost:${info.port}`);
+  console.log(`Intelligent Inventory Advisor running at http://localhost:${info.port}`);
   console.log(`Database: ${dbPath}`);
   if (serveUi) {
     console.log(`UI: served from ${distDir}`);

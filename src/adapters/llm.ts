@@ -1,3 +1,5 @@
+import { guessCategory } from '../core/classifier.js';
+import { CATEGORY_WORDS } from '../data/seed.js';
 import { CATEGORY_ICONS } from '../db/map.js';
 import type {
   Candidate,
@@ -9,18 +11,7 @@ import type {
   VerdictKind,
 } from '../core/types.js';
 
-const CATEGORIES: Category[] = [
-  'phone',
-  'earbuds',
-  'headphones',
-  'charger',
-  'camera',
-  'tablet',
-  'laptop',
-  'watch',
-  'tv',
-  'speaker',
-];
+const CATEGORIES = Object.keys(CATEGORY_WORDS) as Category[];
 
 export interface ResearchedProduct {
   name: string;
@@ -52,13 +43,13 @@ export function isLlmConfigured(): boolean {
   return readLlmConfig() !== null;
 }
 
-async function chatJson<T>(system: string, user: string): Promise<T> {
+async function chatJson<T>(system: string, user: string, temperature = 0.2): Promise<T> {
   const cfg = readLlmConfig();
   if (!cfg) throw new Error('LLM is not configured');
 
   const payload: Record<string, unknown> = {
     model: cfg.model,
-    temperature: 0.2,
+    temperature,
     messages: [
       { role: 'system', content: system + '\nAlways respond with a single JSON object, no markdown.' },
       { role: 'user', content: user },
@@ -211,18 +202,107 @@ Return:
 }
 
 function guessCategoryFromQuery(query: string): Category | null {
-  const q = query.toLowerCase();
-  if (/phone|iphone|galaxy|pixel|samsung|xiaomi|oneplus/.test(q)) return 'phone';
-  if (/airpod|earbud|buds/.test(q)) return 'earbuds';
-  if (/headphone|xm5|xm4/.test(q)) return 'headphones';
-  if (/charger|gan|watt/.test(q)) return 'charger';
-  if (/camera|sony α|a7|a6400/.test(q)) return 'camera';
-  if (/ipad|tablet/.test(q)) return 'tablet';
-  if (/macbook|laptop/.test(q)) return 'laptop';
-  if (/watch/.test(q)) return 'watch';
-  if (/\btv\b/.test(q)) return 'tv';
-  if (/speaker|soundbar/.test(q)) return 'speaker';
-  return null;
+  return guessCategory(query);
+}
+
+export interface ModelSuggestion {
+  name: string;
+  meta: string;
+  price: number | null;
+}
+
+/**
+ * A brand or a range ("hammer earbuds") is not one product.
+ * Return the real models a shopper might mean so they can pick one.
+ */
+function readModelRows(
+  raw: { models?: Array<{ name?: string; meta?: string; price_eur?: number | null }> },
+  query: string,
+): ModelSuggestion[] {
+  const seen = new Set<string>();
+  const models: ModelSuggestion[] = [];
+  const queryKey = query.trim().toLowerCase();
+  for (const row of raw.models ?? []) {
+    const name = row.name?.trim() ?? '';
+    const key = name.toLowerCase();
+    if (!name || key === queryKey || seen.has(key)) continue;
+    if (/\b[a-z]\d{1,2}\b/i.test(name)) continue;
+    seen.add(key);
+    const price =
+      typeof row.price_eur === 'number' && Number.isFinite(row.price_eur)
+        ? Math.round(row.price_eur)
+        : null;
+    models.push({ name, meta: row.meta?.trim() ?? '', price });
+    if (models.length === 8) break;
+  }
+  return models;
+}
+
+/** Phones a shopper can buy in November 2026. The model list often stops at the iPhone 15. */
+const CURRENT_IPHONES: ModelSuggestion[] = [
+  { name: 'iPhone 18 Pro', meta: '6.3″, A20 Pro, 256 GB', price: 1299 },
+  { name: 'iPhone 18 Pro Max', meta: '6.9″, A20 Pro, 256 GB', price: 1449 },
+  { name: 'iPhone Duo', meta: 'Foldable, 7.6″ open, A20 Pro', price: 2199 },
+];
+
+function isBroadIphoneQuery(query: string): boolean {
+  const q = query.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return q === 'iphone' || q === 'iphones' || q === 'appleiphone';
+}
+
+function iphoneGeneration(name: string): number | null {
+  const match = name.match(/iphone\s*(\d{2})\b/i);
+  return match ? Number(match[1]) : null;
+}
+
+function preferCurrentPhones(query: string, models: ModelSuggestion[]): ModelSuggestion[] {
+  if (!isBroadIphoneQuery(query)) return models;
+  const merged = [...CURRENT_IPHONES];
+  for (const model of models) {
+    const generation = iphoneGeneration(model.name);
+    if (generation != null && generation < 16) continue;
+    const key = model.name.toLowerCase();
+    if (merged.some((item) => item.name.toLowerCase() === key)) continue;
+    merged.push(model);
+  }
+  return merged.slice(0, 8);
+}
+
+export async function suggestModels(query: string): Promise<ModelSuggestion[]> {
+  type Raw = {
+    models?: Array<{ name?: string; meta?: string; price_eur?: number | null }>;
+  };
+
+  const ask = (extra: string) =>
+    chatJson<Raw>(
+      `You list real electronics a shopper can buy on 6 November 2026. Return JSON only. Prices are typical Euro street prices.
+Rules:
+- Newest models currently on sale come first. Do not fill the list with phones from 2023 or 2024 when a 2025 or 2026 model exists.
+- For a plain "iPhone" search, include iPhone 18 Pro, iPhone 18 Pro Max, and iPhone Duo, then iPhone 17 models still sold. Do not return iPhone 14 or iPhone 15.
+- Use the manufacturer's real model name. Never invent codes such as H1, X1, X5, Model A, or Series 1.
+- A made-up name like "Hammer X1" must not appear. Real names look like "Hammer Airflow Neo", "iPhone 18 Pro", or "Sony WH-1000XM5".
+- If you are not sure a model exists, leave it out.
+- If the query is already one specific model, return that one model only.
+- If the query is a brand or a range, return the distinct real models a person might mean.
+- meta is a short real difference: size, chip, battery, noise cancelling, or price tier.
+${extra}`,
+      `Query: "${query}"
+
+Return:
+{
+  "models": [
+    { "name": "Exact Model Name", "meta": "ANC, 30 h", "price_eur": 49 }
+  ]
+}`,
+      0,
+    );
+
+  const first = preferCurrentPhones(query, readModelRows(await ask(''), query));
+  if (first.length > 1) return first;
+  return preferCurrentPhones(
+    query,
+    readModelRows(await ask('The previous try was empty or used fake codes. Return real sold models only.'), query),
+  );
 }
 
 /**
@@ -233,6 +313,7 @@ export async function refineVerdict(input: {
   ownedItem: OwnedItem | null;
   comparison: DeltaRow[] | null;
   draft: Pick<Verdict, 'kind' | 'tag' | 'head' | 'rationale'>;
+  currency?: string;
 }): Promise<{ kind: VerdictKind; tag: string; head: string; rationale: string } | null> {
   type Raw = {
     kind?: string;
@@ -244,10 +325,11 @@ export async function refineVerdict(input: {
   const kinds: VerdictKind[] = ['skip', 'wait', 'buy', 'clear'];
   const raw = await chatJson<Raw>(
     `You advise people whether an upgrade is worth buying vs what they already own.
-Be concise, concrete, and honest. Prefer keeping money unless gains are clear.
+Write like a sharp friend, not a spec sheet. Short sentences. Honest. Prefer keeping money unless the gains are obvious.
 kind must be one of: skip, wait, buy, clear.
-"clear" = new category / no overlap. "skip" = not worth it. "wait" = borderline. "buy" = worth it.
-Return JSON only.`,
+"clear" = they don't own this kind of thing. "skip" = not worth it. "wait" = only if they really want it. "buy" = worth it.
+Do not change kind. Return JSON only.
+Prices are already in ${input.currency ?? 'EUR'}. If you mention a price, keep that number and that currency. Do not convert it.`,
     JSON.stringify(
       {
         candidate: {
@@ -270,7 +352,7 @@ Return JSON only.`,
       null,
       2,
     ) +
-      `\n\nReturn: { "kind": "...", "tag": "Verdict · ...", "head": "one short line", "rationale": "2-3 sentences" }`,
+      `\n\nReturn: { "kind": "...", "tag": "Skip it | Hold on | Go for it | New for you", "head": "one short spoken line", "rationale": "2 short sentences a person would actually say" }`,
   );
 
   const kind = kinds.includes(raw.kind as VerdictKind) ? (raw.kind as VerdictKind) : input.draft.kind;

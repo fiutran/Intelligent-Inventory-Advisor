@@ -42,8 +42,8 @@ export function useAppState() {
     })();
   }, [refreshInventory]);
 
-  const runDecide = useCallback(async (query: string, price: number | null) => {
-    const result = await api.decide(query, price);
+  const runDecide = useCallback(async (query: string, price: number | null, currency: string) => {
+    const result = await api.decide(query, price, currency);
     setDecisionId(result.decision_id);
     return result;
   }, []);

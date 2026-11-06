@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
-import type { DeltaKind, Verdict } from '../../core/types.js';
+import { formatMoney, type CurrencyCode } from '../../core/currency';
+import type { DeltaKind, Verdict, VerdictKind } from '../../core/types.js';
 
 const PILL: Record<DeltaKind, string> = {
   mean: 'p-mean',
@@ -8,7 +9,22 @@ const PILL: Record<DeltaKind, string> = {
   same: '',
 };
 
+const PILL_TEXT: Record<DeltaKind, string> = {
+  mean: 'Better',
+  marg: 'Small change',
+  new: 'New',
+  same: '',
+};
+
+const OUTCOME: Record<VerdictKind, string> = {
+  skip: 'Skip it',
+  wait: 'Hold on',
+  buy: 'Go for it',
+  clear: 'New for you',
+};
+
 interface VerdictScreenProps {
+  currency: CurrencyCode;
   verdict: Verdict;
   onSkip: () => void;
   onBuy: () => void;
@@ -16,31 +32,25 @@ interface VerdictScreenProps {
 }
 
 function isDuplicate(v: Verdict): boolean {
-  return (
-    v.ownedItem !== null &&
-    v.candidate.name === v.ownedItem.name
-  );
+  return v.ownedItem !== null && v.candidate.name === v.ownedItem.name;
 }
 
 function actionLabels(v: Verdict): { skip: string; buy: string } {
-  if (isDuplicate(v)) return { skip: 'Not buying', buy: 'Buy anyway' };
-  if (v.comparison && v.comparison.length > 0) {
-    return { skip: 'Log “skipped”', buy: 'Buy it' };
-  }
-  return { skip: 'Not buying', buy: 'Buy it' };
+  if (isDuplicate(v)) return { skip: 'I’ll pass', buy: 'Buy a second one' };
+  return { skip: 'I’ll pass', buy: 'I’m buying it' };
 }
 
-export function VerdictScreen({ verdict, onSkip, onBuy, onBack }: VerdictScreenProps) {
+export function VerdictScreen({ currency, verdict, onSkip, onBuy, onBack }: VerdictScreenProps) {
   const { skip, buy } = actionLabels(verdict);
   const c = verdict.candidate;
   const shortName = c.name.split(' ').slice(0, 2).join(' ');
 
   return (
     <section className="screen fade">
-      <div className="eyebrow">Delta vs. what you own</div>
+      <p className="kicker">Your answer</p>
 
       <div className={`verdict ${verdict.kind}`}>
-        <div className="tag">{verdict.tag}</div>
+        <div className="tag">{OUTCOME[verdict.kind]}</div>
         <div className="head">{verdict.head}</div>
         <div className="rz">{verdict.rationale}</div>
         <div className="vmeta">
@@ -54,30 +64,33 @@ export function VerdictScreen({ verdict, onSkip, onBuy, onBack }: VerdictScreenP
       </div>
 
       <div className="candline">
-        <div className="t2">{c.icon}</div>
+        <div className="t2" aria-hidden="true">
+          {c.icon}
+        </div>
         <div>
           <div className="nm">{c.name}</div>
           <div className="mt">
             {c.meta}
-            {c.price ? ` · €${c.price}` : ''}
+            {c.price ? ` · ${formatMoney(c.price, currency)}` : ''}
           </div>
         </div>
       </div>
 
       {verdict.comparison && verdict.comparison.length > 0 && (
         <>
+          <p className="cmp-lead">Side by side with what you own</p>
           <div className="cmp">
             <div className="ch">Spec</div>
-            <div className="ch r">You own</div>
+            <div className="ch r">You have</div>
             <div className="ch r">{shortName}</div>
             {verdict.comparison.map((r) => (
               <Fragment key={r.k}>
-                <div className="cell lbl">{r.k}</div>
-                <div className="cell val">{r.own}</div>
-                <div className="cell new">
+                <div className={`cell lbl ${r.kind}`}>{r.k}</div>
+                <div className={`cell val ${r.kind}`}>{r.own}</div>
+                <div className={`cell new ${r.kind}`}>
                   {r.cand}
-                  {r.label ? (
-                    <span className={`delta-pill ${PILL[r.kind]}`}>{r.label}</span>
+                  {PILL_TEXT[r.kind] ? (
+                    <span className={`delta-pill ${PILL[r.kind]}`}>{PILL_TEXT[r.kind]}</span>
                   ) : null}
                 </div>
               </Fragment>
@@ -85,10 +98,10 @@ export function VerdictScreen({ verdict, onSkip, onBuy, onBack }: VerdictScreenP
           </div>
           <div className="legend">
             <span>
-              <span className="dot" style={{ background: 'var(--jade)' }} /> Meaningful
+              <span className="dot" style={{ background: 'var(--jade)' }} /> Better
             </span>
             <span>
-              <span className="dot" style={{ background: 'var(--faint)' }} /> Marginal
+              <span className="dot" style={{ background: 'var(--faint)' }} /> Small change
             </span>
             <span>
               <span className="dot" style={{ background: 'var(--amber)' }} /> New
@@ -99,8 +112,8 @@ export function VerdictScreen({ verdict, onSkip, onBuy, onBack }: VerdictScreenP
 
       {isDuplicate(verdict) && (
         <div className="note">
-          Nothing to compare: it&apos;s the same model. If this is a <b>replacement</b>,
-          mark the old one retired instead of adding a duplicate.
+          Same model, so there’s nothing new to compare. If the old one is worn out, retire it instead of
+          keeping two.
         </div>
       )}
 
@@ -109,15 +122,15 @@ export function VerdictScreen({ verdict, onSkip, onBuy, onBack }: VerdictScreenP
         verdict.ownedItem &&
         (verdict.kind === 'skip' || verdict.kind === 'wait') && (
           <div className="note">
-            If you buy anyway, I&apos;ll replace <b>{verdict.ownedItem.name}</b> in your list.
-            Consider selling the old one so you&apos;re not paying for two.
+            If you buy it anyway, I’ll swap out <b>{verdict.ownedItem.name}</b>. Worth selling the old one so
+            you’re not paying for both.
           </div>
         )}
 
       {!isDuplicate(verdict) && verdict.comparison === null && verdict.ownedItem && (
         <div className="note">
-          Add the model to your inventory or pick a known one, and I&apos;ll compare
-          spec-by-spec. Even one owned item in this category is enough to warn you.
+          I can see you already own something in this category. Add the exact model and I’ll compare them
+          spec by spec.
         </div>
       )}
 
@@ -131,7 +144,7 @@ export function VerdictScreen({ verdict, onSkip, onBuy, onBack }: VerdictScreenP
       </div>
 
       <button type="button" className="backlink" onClick={onBack}>
-        ← weigh a different item
+        Check something else
       </button>
     </section>
   );

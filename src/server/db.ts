@@ -22,6 +22,7 @@ export function openDatabase(path = DEFAULT_PATH): AppDatabase {
   db.exec('PRAGMA foreign_keys = ON;');
   migrate(db);
   seedIfEmpty(db);
+  ensureCategories(db);
   syncCatalog(db);
   return db;
 }
@@ -54,6 +55,78 @@ function seedIfEmpty(db: AppDatabase): void {
   }
 
   // Catalog products/aliases filled by syncCatalog
+}
+
+/** Existing databases only seed categories once. New electronics categories still need to appear. */
+function ensureCategories(db: AppDatabase): void {
+  const keep = new Set(SEED_CATEGORY_ROWS.map((c) => c.category_id));
+  const inUse = db.prepare(
+    `SELECT 1 AS n FROM inventory_item WHERE category_id = ?
+     UNION ALL SELECT 1 FROM product_cache WHERE category_id = ?
+     UNION ALL SELECT 1 FROM decision WHERE category_id = ?`,
+  );
+  const delKw = db.prepare('DELETE FROM keyword WHERE category_id = ?');
+  const delCat = db.prepare('DELETE FROM category WHERE category_id = ?');
+  const dropIfFree = (categoryId: number) => {
+    if (keep.has(categoryId)) return;
+    const used = inUse.get(categoryId, categoryId, categoryId) as { n: number } | undefined;
+    if (used) return;
+    delKw.run(categoryId);
+    delCat.run(categoryId);
+  };
+
+  db.exec('BEGIN');
+  try {
+    const existing = db.prepare('SELECT category_id, name FROM category').all() as {
+      category_id: number;
+      name: string;
+    }[];
+    const seedNames = new Set<string>(SEED_CATEGORY_ROWS.map((c) => c.name));
+    for (const row of existing) {
+      if (seedNames.has(row.name)) dropIfFree(row.category_id);
+    }
+
+    const insCat = db.prepare(
+      'INSERT OR IGNORE INTO category (category_id, name, icon) VALUES (?, ?, ?)',
+    );
+    const updCat = db.prepare('UPDATE category SET name = ?, icon = ? WHERE category_id = ?');
+    for (const c of SEED_CATEGORY_ROWS) {
+      insCat.run(c.category_id, c.name, c.icon);
+      updCat.run(c.name, c.icon, c.category_id);
+    }
+
+    const wordsByCat = new Map<number, string[]>();
+    for (const k of seedKeywordRows()) {
+      const list = wordsByCat.get(k.category_id) ?? [];
+      list.push(k.word);
+      wordsByCat.set(k.category_id, list);
+    }
+    const hasWord = db.prepare(
+      'SELECT 1 AS n FROM keyword WHERE category_id = ? AND word = ?',
+    );
+    const insKw = db.prepare(
+      'INSERT INTO keyword (category_id, word, source) VALUES (?, ?, ?)',
+    );
+    for (const [categoryId, words] of wordsByCat) {
+      const placeholders = words.map(() => '?').join(', ');
+      db.prepare(
+        `DELETE FROM keyword WHERE category_id = ? AND word NOT IN (${placeholders})`,
+      ).run(categoryId, ...words);
+      for (const word of words) {
+        const found = hasWord.get(categoryId, word) as { n: number } | undefined;
+        if (found) continue;
+        insKw.run(categoryId, word, 'seed');
+      }
+    }
+
+    const left = db.prepare('SELECT category_id FROM category').all() as { category_id: number }[];
+    for (const row of left) dropIfFree(row.category_id);
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 /** Upsert seed catalog so existing DBs pick up new models without reset. */

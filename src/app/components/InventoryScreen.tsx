@@ -11,28 +11,34 @@ interface InventoryScreenProps {
   onReset: () => void;
 }
 
-function ItemRow({
-  item,
-  action,
-}: {
-  item: InventoryListItem;
-  action?: ReactNode;
-}) {
+function friendlySince(since: string): string {
+  const iso = since.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!iso) return since;
+  const date = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  return date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+}
+
+function ItemRow({ item, action }: { item: InventoryListItem; action?: ReactNode }) {
+  const when =
+    item.status === 'owned'
+      ? `since ${friendlySince(item.since)}`
+      : item.status === 'retired'
+        ? 'you moved on'
+        : 'saved for later';
+
   return (
     <div className="item">
-      <div className="t2">{item.icon}</div>
+      <div className="t2" aria-hidden="true">
+        {item.icon}
+      </div>
       <div style={{ flex: 1 }}>
         <div className="nm">{item.name}</div>
         <div className="mt">
-          {item.meta}
-          {item.status === 'owned' ? ` · owned ${item.since}` : ''}
-          {item.status === 'retired' ? ' · replaced' : ''}
-          {item.status === 'considering' ? ' · saved for later' : ''}{' '}
-          {item.status === 'owned' && (
-            <span className={`prov ${item.prov}`}>{PROV_LABEL[item.prov]}</span>
-          )}
-          {item.status === 'considering' && <span className="prov manual">Considering</span>}
-          {item.status === 'retired' && <span className="prov photo">Retired</span>}
+          {item.meta ? `${item.meta} · ` : ''}
+          {when}{' '}
+          {item.status === 'owned' && <span className={`prov ${item.prov}`}>{PROV_LABEL[item.prov]}</span>}
+          {item.status === 'considering' && <span className="prov manual">On your mind</span>}
+          {item.status === 'retired' && <span className="prov photo">Replaced</span>}
         </div>
       </div>
       {action}
@@ -52,13 +58,16 @@ export function InventoryScreen({
 
   return (
     <section className="screen fade">
+      <p className="kicker">Your list</p>
+      <h2 className="hero hero-sm">What you own</h2>
+      <p className="sub">This is the stuff every answer is measured against. It stays on this computer.</p>
+
       {empty ? (
-        <div className="shot" style={{ marginTop: 12 }}>
-          <div className="cam">▤</div>
-          <div className="h">Nothing here yet</div>
+        <div className="shot">
+          <div className="h">Your list is empty</div>
           <div className="s">
-            Add what you already own, or weigh a purchase on Decide. Start with a clean slate:
-            your list grows as you use the app.
+            Add a phone, a charger, the headphones you already use. Then the next “should I buy it?” has
+            something real to push against.
           </div>
         </div>
       ) : null}
@@ -66,9 +75,7 @@ export function InventoryScreen({
       {considering.length > 0 && (
         <>
           <div className="invhead">
-            <div className="eyebrow" style={{ margin: 0 }}>
-              Thinking about
-            </div>
+            <div className="eyebrow">On your mind</div>
             <div className="n">{considering.length}</div>
           </div>
           <div className="list">
@@ -79,7 +86,7 @@ export function InventoryScreen({
                 action={
                   <div className="item-actions">
                     <button type="button" className="mini" onClick={() => onWeighConsidering(i.name)}>
-                      Weigh
+                      Check
                     </button>
                     <button type="button" className="mini ghost" onClick={() => onRemove(i.item_id)}>
                       Remove
@@ -92,24 +99,28 @@ export function InventoryScreen({
         </>
       )}
 
-      <div className="invhead" style={{ marginTop: considering.length ? 18 : 4 }}>
-        <div className="eyebrow" style={{ margin: 0 }}>
-          Your things
-        </div>
-        <div className="n">{owned.length} items</div>
-      </div>
-      <div className="list">
-        {owned.map((i) => (
-          <ItemRow key={`o-${i.item_id}`} item={i} />
-        ))}
-      </div>
+      {(owned.length > 0 || !empty) && (
+        <>
+          <div className="invhead">
+            <div className="eyebrow">You own</div>
+            <div className="n">{owned.length}</div>
+          </div>
+          {owned.length === 0 ? (
+            <p className="yours-empty">Nothing saved as yours yet.</p>
+          ) : (
+            <div className="list">
+              {owned.map((i) => (
+                <ItemRow key={`o-${i.item_id}`} item={i} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {retired.length > 0 && (
         <>
-          <div className="invhead" style={{ marginTop: 18 }}>
-            <div className="eyebrow" style={{ margin: 0 }}>
-              Replaced
-            </div>
+          <div className="invhead">
+            <div className="eyebrow">You’ve moved on</div>
             <div className="n">{retired.length}</div>
           </div>
           <div className="list">
@@ -121,8 +132,8 @@ export function InventoryScreen({
       )}
 
       {!empty && (
-        <button type="button" className="backlink" style={{ marginTop: 20 }} onClick={onReset}>
-          Clear all my data (start fresh)
+        <button type="button" className="backlink" onClick={onReset}>
+          Erase everything and start over
         </button>
       )}
     </section>

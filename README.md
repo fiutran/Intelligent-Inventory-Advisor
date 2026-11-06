@@ -1,4 +1,4 @@
-# UpgradeSkip: Inventory Delta Advisor
+# Intelligent Inventory Advisor
 
 Check what you're thinking of buying against what you already own.
 
@@ -22,7 +22,7 @@ Share with a teammate:
 npm run pack
 ```
 
-→ creates `UpgradeSkip-portable.zip`
+→ creates `Intelligent-Inventory-Advisor-portable.zip`
 
 ---
 

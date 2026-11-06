@@ -1,14 +1,39 @@
 export type Category =
   | 'phone'
+  | 'tablet'
+  | 'ereader'
+  | 'watch'
   | 'earbuds'
   | 'headphones'
-  | 'charger'
-  | 'camera'
-  | 'tablet'
+  | 'speaker'
+  | 'microphone'
   | 'laptop'
-  | 'watch'
+  | 'monitor'
+  | 'keyboard'
+  | 'mouse'
+  | 'webcam'
+  | 'printer'
+  | 'storage'
+  | 'networking'
+  | 'components'
   | 'tv'
-  | 'speaker';
+  | 'streaming'
+  | 'projector'
+  | 'camera'
+  | 'drone'
+  | 'charger'
+  | 'power-bank'
+  | 'gaming'
+  | 'smart-home'
+  | 'lighting'
+  | 'personal-care'
+  | 'health'
+  | 'kitchen'
+  | 'appliances'
+  | 'fitness'
+  | 'car-electronics'
+  | 'power-tools'
+  | 'music-tech';
 
 export type SpecWeight = 'high' | 'low';
 
@@ -94,6 +119,7 @@ export interface ClassifyResult {
 export interface DecideInput {
   query: string;
   price?: number | null;
+  currency?: import('./currency.js').CurrencyCode;
 }
 
 export interface DecideResult {

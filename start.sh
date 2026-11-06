@@ -3,7 +3,7 @@ set -e
 cd "$(dirname "$0")"
 
 echo ""
-echo "  UpgradeSkip"
+echo "  Intelligent Inventory Advisor"
 echo "  -----------"
 echo "  Starting on this computer..."
 echo ""

@@ -1,9 +1,21 @@
-import { CATEGORY_LABEL } from '../data/seed.js';
-import { compareSpecs, costPerGain, summarizeDelta } from './delta.js';
+import { CATEGORY_AREA, CATEGORY_LABEL } from '../data/seed.js';
+import { formatMoney, type CurrencyCode } from './currency.js';
+import { compareSpecs, summarizeDelta } from './delta.js';
 import type { Candidate, DeltaRow, OwnedItem, Verdict, VerdictKind } from './types.js';
 
-function formatPrice(price: number | null): string {
-  return price ? `€${price}` : '-';
+function formatPrice(price: number | null, currency: CurrencyCode): string {
+  return formatMoney(price, currency);
+}
+
+function spendPhrase(price: number | null, currency: CurrencyCode): string {
+  return price ? formatMoney(price, currency) : 'the money';
+}
+
+function friendlySince(since: string): string {
+  const iso = since.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!iso) return since;
+  const date = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  return date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
 }
 
 function buildVerdict(
@@ -34,17 +46,18 @@ function buildVerdict(
 function verdictDuplicate(
   candidate: Candidate,
   ownedItem: OwnedItem,
+  currency: CurrencyCode,
 ): Verdict {
   return buildVerdict(
     'skip',
-    'Verdict · you already own this',
-    'You own this exact thing already.',
-    `Your ${ownedItem.name} is in your inventory since ${ownedItem.since}. ` +
-      'Buying a second one is pure duplication unless the first is broken or gifted away.',
+    'You already have it',
+    'You already own this.',
+    `${ownedItem.name} has been yours since ${friendlySince(ownedItem.since)}. ` +
+      'A second one only makes sense if the first is broken, lost, or a gift for someone else.',
     [
-      ['Already owned', '1'],
-      ['Would spend', formatPrice(candidate.price)],
-      ['New capability', 'None'],
+      ['You own', 'This one'],
+      ['Price', formatPrice(candidate.price, currency)],
+      ['Anything new', 'Nothing'],
     ],
     candidate,
     ownedItem,
@@ -57,10 +70,10 @@ function verdictUpgrade(
   candidate: Candidate,
   ownedItem: OwnedItem,
   comparison: DeltaRow[],
+  currency: CurrencyCode,
 ): Verdict {
   const { meaningful, newCount, realGains } = summarizeDelta(comparison);
   const price = candidate.price ?? 0;
-  const perGain = costPerGain(candidate.price, realGains);
 
   let kind: VerdictKind;
   let tag: string;
@@ -68,23 +81,29 @@ function verdictUpgrade(
 
   if (realGains <= 1) {
     kind = 'skip';
-    tag = 'Verdict · skip for now';
-    head = `${realGains || 'No'} real upgrade${realGains === 1 ? '' : 's'}. Not ${formatPrice(price)} worth.`;
+    tag = 'Skip it';
+    head = realGains === 0 ? `Keep ${spendPhrase(price, currency)}.` : `Not worth ${spendPhrase(price, currency)}.`;
   } else if (realGains <= 3) {
     kind = 'wait';
-    tag = 'Verdict · borderline';
-    head = `${realGains} real upgrades, worth it only if you value them.`;
+    tag = 'Hold on';
+    head = 'Only if you really want it.';
   } else {
     kind = 'buy';
-    tag = 'Verdict · worth it';
-    head = `${realGains} real upgrades over what you own.`;
+    tag = 'Go for it';
+    head = 'Yes. This one is worth it.';
   }
 
-  const newPart = newCount ? ` and ${newCount} are new` : '';
+  const better =
+    meaningful === 0
+      ? 'Nothing important is clearly better'
+      : meaningful === 1
+        ? 'One thing is clearly better'
+        : `${meaningful} things are clearly better`;
+  const fresh =
+    newCount === 0 ? '' : newCount === 1 ? ', and one thing is new' : `, and ${newCount} things are new`;
   const rationale =
-    `You already own an ${ownedItem.name} (since ${ownedItem.since}). ` +
-    `Of ${comparison.length} comparable specs, ${meaningful} improve meaningfully${newPart}. ` +
-    'the rest are marginal or identical.';
+    `You already have ${ownedItem.name}, since ${friendlySince(ownedItem.since)}. ` +
+    `${better}${fresh}. Everything else barely changes.`;
 
   return buildVerdict(
     kind,
@@ -92,9 +111,9 @@ function verdictUpgrade(
     head,
     rationale,
     [
-      ['Real gains', String(realGains)],
-      ['Price', formatPrice(candidate.price)],
-      ['Cost / gain', perGain != null ? `€${perGain}` : '-'],
+      ['Clearly better', String(realGains)],
+      ['Price', formatPrice(candidate.price, currency)],
+      ['Owned since', friendlySince(ownedItem.since) || '—'],
     ],
     candidate,
     ownedItem,
@@ -103,21 +122,59 @@ function verdictUpgrade(
 }
 
 /** Category overlap but model unknown: redundancy flag only */
+function nameList(items: OwnedItem[]): string {
+  const names = items.map((item) => item.name);
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+function sameJob(candidateName: string, ownedName: string): boolean {
+  const query = candidateName.toLowerCase();
+  const owned = ownedName.toLowerCase();
+  if (query === owned || query.includes(owned) || owned.includes(query)) return true;
+  const words = owned.split(/\s+/).filter((word) => word.length > 3);
+  return words.length > 0 && words.every((word) => query.includes(word));
+}
+
 function verdictOverlapUnknownModel(
   candidate: Candidate,
-  ownedItem: OwnedItem,
+  ownedItems: OwnedItem[],
   cat: NonNullable<Candidate['cat']>,
+  currency: CurrencyCode,
 ): Verdict {
+  const ownedItem = ownedItems[0];
+  const close = ownedItems.find((item) => sameJob(candidate.name, item.name)) ?? null;
+  const remembered = nameList(ownedItems);
+  const area = CATEGORY_AREA[cat];
+
+  if (close) {
+    return buildVerdict(
+      'skip',
+      'You already have it',
+      `You already have ${close.name}.`,
+      `It’s in your ${area} list, since ${friendlySince(close.since)}. ` +
+        'Buying another one is the purchase you were hoping not to make.',
+      [
+        ['You already have', close.name],
+        ['Area', area],
+        ['Price', formatPrice(candidate.price, currency)],
+      ],
+      candidate,
+      close,
+      null,
+    );
+  }
+
   return buildVerdict(
     'wait',
-    'Verdict · redundancy flag',
-    `You already own a ${CATEGORY_LABEL[cat]}.`,
-    `Your ${ownedItem.name} covers this need (since ${ownedItem.since}). ` +
-      'I recognise the category but not the exact model, so I can flag the overlap but cannot score the upgrade yet.',
+    'Check what you own',
+      `You already have ${remembered}.`,
+    `That’s in ${area}. Only get this if it does something ${ownedItems.length > 1 ? 'those don’t' : 'that one doesn’t'}.`,
     [
-      ['Overlap', 'Same category'],
-      ['Price', formatPrice(candidate.price)],
-      ['Scored', 'Need model'],
+      ['You already have', remembered],
+      ['Area', area],
+      ['Price', formatPrice(candidate.price, currency)],
     ],
     candidate,
     ownedItem,
@@ -126,18 +183,19 @@ function verdictOverlapUnknownModel(
 }
 
 /** No category overlap: genuine gap */
-function verdictNoOverlap(candidate: Candidate, cat: Candidate['cat']): Verdict {
+function verdictNoOverlap(candidate: Candidate, cat: Candidate['cat'], currency: CurrencyCode): Verdict {
   const label = cat ? CATEGORY_LABEL[cat] : 'match';
   return buildVerdict(
     'clear',
-    'Verdict · no overlap',
-    'Nothing like it in your inventory.',
-    `You do not own a ${label} for this. No redundancy risk: this is a genuine gap, ` +
-      'so it is a straight need-vs-want call, not a duplication one.',
+    'New for you',
+    'You don’t own anything like this.',
+    cat
+      ? `There’s no ${label} in your stuff yet. This isn’t a second one of something you have. It’s simply whether you want it.`
+      : 'Nothing you own is close to this. It’s simply whether you want it.',
     [
       ['Overlap', 'None'],
-      ['Price', formatPrice(candidate.price)],
-      ['Redundancy', 'Low'],
+      ['Price', formatPrice(candidate.price, currency)],
+      ['A duplicate?', 'No'],
     ],
     candidate,
     null,
@@ -148,27 +206,36 @@ function verdictNoOverlap(candidate: Candidate, cat: Candidate['cat']): Verdict 
 export interface BuildVerdictInput {
   candidate: Candidate;
   ownedItem: OwnedItem | null;
+  ownedInCategory?: OwnedItem[];
   matched: boolean;
   exactDuplicate: boolean;
+  currency?: CurrencyCode;
 }
 
 export function buildVerdictFromContext(input: BuildVerdictInput): Verdict {
   const { candidate, ownedItem, matched, exactDuplicate } = input;
+  const currency = input.currency ?? 'EUR';
+  const inCategory = input.ownedInCategory ?? (ownedItem ? [ownedItem] : []);
 
   if (exactDuplicate && ownedItem) {
-    return verdictDuplicate(candidate, ownedItem);
+    return verdictDuplicate(candidate, ownedItem, currency);
   }
 
   if (matched && ownedItem && candidate.specs) {
     const comparison = compareSpecs(ownedItem, candidate.specs);
-    return verdictUpgrade(candidate, ownedItem, comparison);
+    return verdictUpgrade(candidate, ownedItem, comparison, currency);
   }
 
   if (ownedItem && candidate.cat) {
-    return verdictOverlapUnknownModel(candidate, ownedItem, candidate.cat);
+    return verdictOverlapUnknownModel(
+      candidate,
+      inCategory.length ? inCategory : [ownedItem],
+      candidate.cat,
+      currency,
+    );
   }
 
-  return verdictNoOverlap(candidate, candidate.cat);
+  return verdictNoOverlap(candidate, candidate.cat, currency);
 }
 
 /** When user buys against a skip/wait verdict, suggest selling the existing item */

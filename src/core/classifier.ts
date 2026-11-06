@@ -15,12 +15,35 @@ export interface ClassifierDeps {
   researchProduct?: (query: string) => Promise<CatalogItem | null>;
 }
 
+const BRAND_WORDS = new Set(['samsung', 'pixel', 'galaxy', 'android', 'iphone', 'sony', 'lg']);
+
+function matchesWord(query: string, word: string): boolean {
+  let from = 0;
+  while (from <= query.length - word.length) {
+    const idx = query.indexOf(word, from);
+    if (idx < 0) return false;
+    const before = idx === 0 ? '' : query[idx - 1];
+    const after = query[idx + word.length] ?? '';
+    const beforeOk = before === '' || /[^a-z0-9]/.test(before);
+    const afterOk = after === '' || /[^a-z0-9]/.test(after) || after === 's';
+    if (beforeOk && afterOk) return true;
+    from = idx + 1;
+  }
+  return false;
+}
+
 function guessCategory(query: string): Category | null {
   const q = query.toLowerCase();
+  const hits: { cat: Category; word: string }[] = [];
   for (const cat of Object.keys(CATEGORY_WORDS) as Category[]) {
-    if (CATEGORY_WORDS[cat].some((w) => q.includes(w))) return cat;
+    for (const word of CATEGORY_WORDS[cat]) {
+      if (matchesWord(q, word)) hits.push({ cat, word });
+    }
   }
-  return null;
+  if (!hits.length) return null;
+  hits.sort((a, b) => b.word.length - a.word.length);
+  const specific = hits.find((hit) => !BRAND_WORDS.has(hit.word));
+  return (specific ?? hits[0]).cat;
 }
 
 export { guessCategory };

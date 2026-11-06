@@ -1,6 +1,7 @@
 import { SEED_OWNED } from '../data/seed.js';
 import { classify } from './classifier.js';
-import { findOwned, findSameName } from './ownership.js';
+import { convertFromEur, isCurrency } from './currency.js';
+import { findSameName, ownedInCategory, relevantOwned } from './ownership.js';
 import { buildVerdictFromContext } from './verdict.js';
 import type {
   AppState,
@@ -47,18 +48,22 @@ export async function decide(input: DecideInput, deps: RouterDeps = {}): Promise
   });
 
   const { candidate } = classifyResult;
+  const currency = isCurrency(input.currency) ? input.currency : 'EUR';
+  if (price == null && candidate.price != null && currency !== 'EUR') {
+    candidate.price = convertFromEur(candidate.price, currency);
+  }
 
-  const ownedItem = findOwned(inventory, candidate.cat);
-  const exactDuplicate =
-    classifyResult.matched &&
-    ownedItem !== null &&
-    findSameName(inventory, candidate.name) !== null;
+  const inCategory = ownedInCategory(inventory, candidate.cat);
+  const sameName = findSameName(inventory, candidate.name);
+  const ownedItem = sameName ?? relevantOwned(inCategory, input.query);
 
   let verdict = buildVerdictFromContext({
     candidate,
     ownedItem,
+    ownedInCategory: inCategory,
     matched: classifyResult.matched,
-    exactDuplicate,
+    exactDuplicate: sameName !== null,
+    currency,
   });
 
   if (deps.refineVerdict) {

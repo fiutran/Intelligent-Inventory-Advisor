@@ -5,6 +5,6 @@ dist/
 *.local
 *.tsbuildinfo
 .pack-staging/
-UpgradeSkip-portable.zip
+Intelligent-Inventory-Advisor-portable.zip
 
 .vercel

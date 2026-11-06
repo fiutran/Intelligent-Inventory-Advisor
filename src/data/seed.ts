@@ -1,30 +1,11 @@
 import type { CatalogItem, Category, OwnedItem, Spec, SpecWeight } from '../core/types.js';
 
-export const CATEGORY_WORDS: Record<Category, string[]> = {
-  phone: ['phone', 'iphone', 'pixel', 'galaxy', 'android', 'samsung'],
-  earbuds: ['earbud', 'airpod', 'buds'],
-  headphones: ['headphone', 'over-ear', 'wh-1000', 'xm5', 'xm4'],
-  charger: ['charger', 'adapter', 'gan', 'watt'],
-  camera: ['camera', 'dslr', 'mirrorless', 'a6400', 'a7', 'α'],
-  tablet: ['tablet', 'ipad'],
-  laptop: ['laptop', 'macbook', 'notebook'],
-  watch: ['watch'],
-  tv: ['tv', 'television'],
-  speaker: ['speaker', 'soundbar'],
-};
-
-export const CATEGORY_LABEL: Record<Category, string> = {
-  phone: 'phone',
-  earbuds: 'pair of earbuds',
-  headphones: 'pair of headphones',
-  charger: 'charger',
-  camera: 'camera',
-  tablet: 'tablet',
-  laptop: 'laptop',
-  watch: 'watch',
-  tv: 'TV',
-  speaker: 'speaker',
-};
+export {
+  CATEGORY_AREA,
+  CATEGORY_GROUPS,
+  CATEGORY_LABEL,
+  CATEGORY_WORDS,
+} from './categories.js';
 
 const PHONE_HIGH = new Set(['Main camera', 'Tele zoom', 'Port']);
 
@@ -310,6 +291,20 @@ export function normalizeProductQuery(q: string): string {
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .replace(/\s+/g, ' ');
+}
+
+/** True when the typed text is already one catalog model, not a brand or a range. */
+export function findExactCatalogItem(
+  query: string,
+  catalog: CatalogItem[] = SEED_CATALOG,
+): CatalogItem | undefined {
+  const q = normalizeProductQuery(query);
+  if (!q) return undefined;
+  return catalog.find(
+    (item) =>
+      normalizeProductQuery(item.name) === q ||
+      item.aliases.some((alias) => normalizeProductQuery(alias) === q),
+  );
 }
 
 /** Find a catalog product by typed name or alias. */

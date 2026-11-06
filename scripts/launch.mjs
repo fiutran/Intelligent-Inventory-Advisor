@@ -109,7 +109,7 @@ async function waitForHealth(url, tries = 40) {
 
 async function main() {
   console.log('\n══════════════════════════════════════');
-  console.log('  UpgradeSkip: starting on this PC');
+  console.log('  Intelligent Inventory Advisor: starting on this PC');
   console.log('══════════════════════════════════════');
 
   checkNode();

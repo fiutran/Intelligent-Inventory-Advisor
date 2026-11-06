@@ -27,9 +27,9 @@ export const aiAdapter: AIAdapter = {
       comparison: context.comparison,
       draft: {
         kind: 'wait',
-        tag: 'Verdict · borderline',
-        head: 'Needs a closer look.',
-        rationale: 'Rule-based draft unavailable.',
+        tag: 'Hold on',
+        head: 'Only if you really want it.',
+        rationale: 'There isn’t enough to say this is worth the money yet.',
       },
     });
     if (!polished) {
